@@ -27,7 +27,7 @@ There are already many other libraries for JWT on crates.io however they each ha
 or design that conflicts with the project goals in Kanidm. Examples are:
 
 * Ring as the sole cryptographic provider - we need to use OpenSSL
-* Only supporting RSA - We want to use ECDSA/ED25519
+* Only supporting RSA - We want to use ECDSA
 * Full JWS implementation - As mentioned, JWS has a number of sharp edges like alg=none
 
 As a result, nothing "fit" what we wanted, so we are making another library.
