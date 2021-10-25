@@ -1,3 +1,5 @@
+//! JWS Cryptographic Operations
+
 use openssl::{bn, ec, ecdsa, hash, nid, pkey};
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -12,18 +14,25 @@ use crate::error::JwtError;
 
 #[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
 #[allow(non_camel_case_types)]
+/// Valid Eliptic Curves
 pub enum EcCurve {
     #[serde(rename = "P-256")]
+    /// Nist P-256
     P256,
 }
 
 #[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
 #[allow(non_camel_case_types)]
 #[serde(tag = "kty")]
+/// A JWK formatted public key that can be used to validate a signature
 pub enum Jwk {
+    /// An Eliptic Curve Public Key
     EC {
+        /// The Eliptic Curve in use
         crv: EcCurve,
+        /// The public X component
         x: Base64UrlSafeData,
+        /// The public Y component
         y: Base64UrlSafeData,
         // We don't decode d (private key) because that way we error defending from
         // the fact that ... well you leaked your private key.
@@ -37,21 +46,26 @@ enum JwaAlg {
     ES256,
 }
 
+/// A private key and associated information that can sign Oidc and Jwt data.
 pub enum JwsSigner {
+    /// Eliptic Curve P-256
     ES256 {
+        /// Private Key
         skey: ec::EcKey<pkey::Private>,
+        /// The matching digest.
         digest: hash::MessageDigest,
     },
 }
 
 #[derive(Clone)]
+/// A public key with associated information that can validate the signatures of Oidc and Jwt data.
 pub enum JwsValidator {
+    /// Eliptic Curve P-256
     ES256 {
-        // openssl pubkey
+        /// Public Key
         pkey: ec::EcKey<pkey::Public>,
-        // hash_algo <- based on algo type.
+        /// The matching digest.
         digest: hash::MessageDigest,
-        //  produce openssl sign_verifier as needed.
     },
 }
 
@@ -90,7 +104,7 @@ struct ProtectedHeader {
         rename = "x5t#S256",
         skip_serializing_if = "Option::is_none"
     )]
-    x5t_S256: Option<()>,
+    x5t_s256: Option<()>,
     // Don't allow extra header names?
 }
 
@@ -137,6 +151,7 @@ impl Jws {
         }
     }
 
+    #[allow(dead_code)]
     pub fn set_kid(mut self, kid: String) -> Self {
         self.header.kid = Some(kid);
         self
@@ -147,16 +162,19 @@ impl Jws {
         self
     }
 
+    #[allow(dead_code)]
     pub fn set_cty(mut self, cty: String) -> Self {
         self.header.cty = Some(cty);
         self
     }
 
+    #[cfg(test)]
     pub fn sign_embed_public_jwk(&self, signer: &JwsSigner) -> Result<JwsCompact, JwtError> {
         let jwk = signer.public_key_as_jwk()?;
         self.sign_inner(signer, None, Some(jwk))
     }
 
+    #[cfg(test)]
     pub fn sign(&self, signer: &JwsSigner) -> Result<JwsCompact, JwtError> {
         self.sign_inner(signer, None, None)
     }
@@ -182,7 +200,7 @@ impl Jws {
             x5u: None,
             x5c: None,
             x5t: None,
-            x5t_S256: None,
+            x5t_s256: None,
         };
 
         let payload = self.payload.clone();
@@ -192,11 +210,11 @@ impl Jws {
             .map(|bytes| base64::encode_config(&bytes, base64::URL_SAFE_NO_PAD))?;
         let payload_b64 = base64::encode_config(&self.payload, base64::URL_SAFE_NO_PAD);
 
-        eprintln!("sinput -> {}", format!("{}.{}", hdr_b64, payload_b64));
+        // eprintln!("sinput -> {}", format!("{}.{}", hdr_b64, payload_b64));
 
         let sign_input = format!("{}.{}", hdr_b64, payload_b64).as_bytes().to_vec();
 
-        eprintln!("sinput -> {:?}", sign_input);
+        // eprintln!("sinput -> {:?}", sign_input);
 
         // Compute the signature!
         let ec_sig = match signer {
@@ -213,8 +231,8 @@ impl Jws {
         let mut s = [0; 32];
         s.copy_from_slice(ec_sig.s().to_vec().as_slice());
 
-        eprintln!("r {:?}", r);
-        eprintln!("s {:?}", s);
+        // eprintln!("r {:?}", r);
+        // eprintln!("s {:?}", s);
 
         let mut signature = Vec::with_capacity(64);
         signature.extend_from_slice(&r);
@@ -276,8 +294,7 @@ impl JwsCompact {
                 } else {
                     Err(JwtError::InvalidSignature)
                 }
-            }
-            _ => Err(JwtError::ValidatorAlgMismatch),
+            } // _ => Err(JwtError::ValidatorAlgMismatch),
         }
     }
 }
@@ -404,6 +421,7 @@ impl JwsSigner {
         })
     }
 
+    /// Restore this JwsSigner from a DER private key.
     pub fn from_es256_der(der: &[u8]) -> Result<Self, JwtError> {
         let skey = ec::EcKey::private_key_from_der(der).map_err(|_| JwtError::OpenSSLError)?;
 
@@ -419,6 +437,7 @@ impl JwsSigner {
     }
     */
 
+    /// Export this JwsSigner to a DER private key.
     pub fn private_key_to_der(&self) -> Result<Vec<u8>, JwtError> {
         match self {
             JwsSigner::ES256 { skey, digest: _ } => skey
@@ -427,6 +446,7 @@ impl JwsSigner {
         }
     }
 
+    /// Create a new secure private key for signing
     pub fn generate_es256() -> Result<Self, JwtError> {
         let ec_group = ec::EcGroup::from_curve_name(nid::Nid::X9_62_PRIME256V1)
             .map_err(|_| JwtError::OpenSSLError)?;
@@ -440,6 +460,7 @@ impl JwsSigner {
         })
     }
 
+    /// Export the public key of this signer as a Jwk
     pub fn public_key_as_jwk(&self) -> Result<Jwk, JwtError> {
         match self {
             JwsSigner::ES256 { skey, digest: _ } => {
@@ -589,7 +610,7 @@ mod tests {
         let released = jwsc
             .validate(&jws_validator)
             .expect("Unable to validate jws");
-        assert!(jws.payload() == &[0, 1, 2, 3, 4]);
+        assert!(released.payload() == &[0, 1, 2, 3, 4]);
     }
 
     // A test for the signer to/from der.

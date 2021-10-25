@@ -1,3 +1,6 @@
+//! Jwt implementation
+
+use crate::btreemap_empty;
 use crate::crypto::{Jwk, Jws, JwsCompact, JwsSigner, JwsValidator};
 use crate::error::JwtError;
 use serde::{Deserialize, Serialize};
@@ -6,24 +9,42 @@ use std::fmt;
 use std::str::FromStr;
 use url::Url;
 
+/// An unverified jwt input which is ready to validate
 pub struct JwtUnverified {
     jwsc: JwsCompact,
 }
 
+/// A signed jwt which can be converted to a string.
 pub struct JwtSigned {
     jwsc: JwsCompact,
 }
 
+/// A Jwt that is being created or has succeeded in being validated
 #[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
 pub struct Jwt {
+    /// The issuer of this token
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub iss: Option<String>,
+    /// Unique id of the subject
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sub: Option<String>,
+    /// client_id of the oauth2 rp
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub aud: Option<String>,
+    /// Expiry in utc epoch seconds
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub exp: Option<i64>,
+    /// Not valid before.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub nbf: Option<i64>,
+    /// Issued at time.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub iat: Option<i64>,
+    /// -- not used.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub jti: Option<String>,
-    #[serde(flatten)]
+    /// Arbitrary custom claims can be inserted or decoded here.
+    #[serde(flatten, skip_serializing_if = "btreemap_empty")]
     pub claims: BTreeMap<String, serde_json::value::Value>,
 }
 
@@ -58,12 +79,15 @@ impl Jwt {
             .map(|jwsc| JwtSigned { jwsc })
     }
 
+    /// Use this private signer to created a signed jwt.
     pub fn sign(&self, signer: &JwsSigner) -> Result<JwtSigned, JwtError> {
         self.sign_inner(signer, None, None)
     }
 }
 
 impl JwtUnverified {
+    /// Using this JwsValidator, assert the correct signature of the data contained in
+    /// this jwt.
     pub fn validate(&self, validator: &JwsValidator) -> Result<Jwt, JwtError> {
         let released = self.jwsc.validate(&validator)?;
 
@@ -80,6 +104,8 @@ impl FromStr for JwtUnverified {
 }
 
 impl JwtSigned {
+    /// Invalidate this signed jwt, causing it to require validation before you can use it
+    /// again.
     pub fn invalidate(self) -> JwtUnverified {
         JwtUnverified { jwsc: self.jwsc }
     }
