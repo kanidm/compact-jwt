@@ -12,7 +12,7 @@ use crate::error::JwtError;
 
 #[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
 #[allow(non_camel_case_types)]
-enum EcCurve {
+pub enum EcCurve {
     #[serde(rename = "P-256")]
     P256,
 }
@@ -20,7 +20,7 @@ enum EcCurve {
 #[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
 #[allow(non_camel_case_types)]
 #[serde(tag = "kty")]
-enum Jwk {
+pub enum Jwk {
     EC {
         crv: EcCurve,
         x: Base64UrlSafeData,
@@ -37,7 +37,7 @@ enum JwaAlg {
     ES256,
 }
 
-enum JwsSigner {
+pub enum JwsSigner {
     ES256 {
         skey: ec::EcKey<pkey::Private>,
         digest: hash::MessageDigest,
@@ -45,7 +45,7 @@ enum JwsSigner {
 }
 
 #[derive(Clone)]
-enum JwsValidator {
+pub enum JwsValidator {
     ES256 {
         // openssl pubkey
         pkey: ec::EcKey<pkey::Public>,
@@ -95,7 +95,7 @@ struct ProtectedHeader {
 }
 
 #[derive(Debug, Clone)]
-struct JwsCompact {
+pub(crate) struct JwsCompact {
     header: ProtectedHeader,
     payload: Vec<u8>,
     sign_input: Vec<u8>,
@@ -120,7 +120,7 @@ impl From<&ProtectedHeader> for Header {
 }
 
 #[derive(Debug, Clone)]
-struct Jws {
+pub(crate) struct Jws {
     header: Header,
     payload: Vec<u8>,
 }
@@ -161,7 +161,7 @@ impl Jws {
         self.sign_inner(signer, None, None)
     }
 
-    fn sign_inner(
+    pub(crate) fn sign_inner(
         &self,
         signer: &JwsSigner,
         jku: Option<Url>,
@@ -228,7 +228,7 @@ impl Jws {
         })
     }
 
-    fn payload(&self) -> &[u8] {
+    pub(crate) fn payload(&self) -> &[u8] {
         &self.payload
     }
 }
@@ -247,7 +247,7 @@ impl JwsCompact {
         self.header.jwk.as_ref()
     }
 
-    pub fn validate(&self, validator: &JwsValidator) -> Result<Jws, JwtError> {
+    pub(crate) fn validate(&self, validator: &JwsValidator) -> Result<Jws, JwtError> {
         match (validator, &self.header.alg) {
             (JwsValidator::ES256 { pkey, digest }, JwaAlg::ES256) => {
                 if self.signature.len() != 64 {

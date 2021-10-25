@@ -6,6 +6,7 @@ pub enum JwtError {
     InvalidBase64,
     InvalidHeaderFormat,
     InvalidSignature,
+    InvalidJwt,
     CriticalExtension,
     OpenSSLError,
     ValidatorAlgMismatch,
