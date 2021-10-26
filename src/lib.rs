@@ -8,6 +8,57 @@
 //! be a widespread and required component of many modern web authentication system.
 //!
 //! This is a minimal implementation of JWTs and Oidc Tokens that aims for auditability and correctness.
+//!
+//! # Examples
+//! ```
+//! use std::str::FromStr;
+//! use std::convert::TryFrom;
+//! use url::Url;
+//! use compact_jwt::{JwsValidator, JwsSigner, OidcToken, OidcUnverified};
+//!
+//! let oidc = OidcToken {
+//!         iss: Url::parse("https://oidc.example.com").unwrap(),
+//! #       sub: "6f5ac8d0-8b7b-4a30-8504-e26a43c7a574".to_string(),
+//! #       aud: "test".to_string(),
+//! #       exp: 0,
+//! #       nbf: Some(0),
+//! #       iat: 0,
+//! #       auth_time: 0,
+//! #       nonce: None,
+//! #       acr: None,
+//! #       amr: None,
+//! #       azp: None,
+//! #       jti: None,
+//! #       claims: Default::default(),
+//!     };
+//!
+//! let jws_signer = JwsSigner::generate_es256()
+//!     .unwrap();
+//!
+//! let oidc_signed = oidc.sign(&jws_signer)
+//!     .unwrap();
+//!
+//! // Get the signed formatted token string
+//! let token_str = oidc_signed.to_string();
+//!
+//! // Build a validator from the public key of the signer. In a client scenario
+//! // you would get this public jwk from the oidc authorisation server.
+//! let public_jwk = jws_signer.public_key_as_jwk()
+//!     .unwrap();
+//! let jws_validator = JwsValidator::try_from(&public_jwk)
+//!     .unwrap();
+//!
+//! // Assuming we have the token_str, start to validate it.
+//! let oidc_unverified = OidcUnverified::from_str(&token_str)
+//!     .unwrap();
+//!
+//! let oidc_validated = oidc_unverified
+//!     .validate(&jws_validator)
+//!     .unwrap();
+//!
+//! // Prove we got back the same content.
+//! assert!(oidc_validated == oidc);
+//! ```
 
 pub mod base64_data;
 pub mod crypto;
