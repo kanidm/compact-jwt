@@ -46,6 +46,7 @@ enum JwaAlg {
     ES256,
 }
 
+#[derive(Clone)]
 /// A private key and associated information that can sign Oidc and Jwt data.
 pub enum JwsSigner {
     /// Eliptic Curve P-256
@@ -419,6 +420,20 @@ impl JwsSigner {
             skey,
             digest: hash::MessageDigest::sha256(),
         })
+    }
+
+    /// Given this signer, retrieve the matching validator which can be paired with this.
+    pub fn get_validator(&self) -> Result<JwsValidator, JwtError> {
+        match self {
+            JwsSigner::ES256 { skey, digest } => {
+                ec::EcKey::from_public_key(skey.group(), skey.public_key())
+                    .map_err(|_| JwtError::OpenSSLError)
+                    .map(|pkey| JwsValidator::ES256 {
+                        pkey,
+                        digest: digest.clone(),
+                    })
+            }
+        }
     }
 
     /// Restore this JwsSigner from a DER private key.

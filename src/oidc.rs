@@ -1,13 +1,14 @@
 //! Oidc token implementation
 
-use crate::btreemap_empty;
 use crate::crypto::{Jwk, Jws, JwsCompact, JwsSigner, JwsValidator};
 use crate::error::JwtError;
+use crate::{btreemap_empty, vec_empty};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 use url::Url;
+use uuid::Uuid;
 
 /// An unverified token input which is ready to validate
 pub struct OidcUnverified {
@@ -19,13 +20,60 @@ pub struct OidcSigned {
     jwsc: JwsCompact,
 }
 
+#[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
+#[serde(untagged)]
+/// The subject of the oidc token. This is intended to be a unique identifier which is
+/// why we have special handling for a number of possible unique formats.
+pub enum OidcSubject {
+    /// A uuid of the subject.
+    U(Uuid),
+    /// An arbitrary string
+    S(String),
+}
+
+impl fmt::Display for OidcSubject {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OidcSubject::U(u) => write!(f, "{}", u),
+            OidcSubject::S(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+/// Standardised or common claims that are used in oidc.
+/// `https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims`
+#[derive(Debug, Serialize, Clone, Deserialize, PartialEq, Default)]
+pub struct OidcClaims {
+    /// This is equivalent to a display name, and how the user wishes to be seen or known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// The displayed username. Ie claire or c.example
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred_username: Option<String>,
+    /// email - the primary mail address.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    /// If the email has been validated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email_verified: Option<bool>,
+    /// The users timezone
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zoneinfo: Option<String>,
+    /// The users locale
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
+    /// The scopes assigned to this token
+    #[serde(skip_serializing_if = "vec_empty", default)]
+    pub scopes: Vec<String>,
+}
+
 /// An Oidc Token that is being created, or has succeeded in being validated
 #[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
 pub struct OidcToken {
     /// Case sensitive URL.
     pub iss: Url,
     /// Unique id of the subject
-    pub sub: String,
+    pub sub: OidcSubject,
     /// client_id of the oauth2 rp
     pub aud: String,
     /// Expiry in utc epoch seconds
@@ -35,9 +83,8 @@ pub struct OidcToken {
     pub nbf: Option<i64>,
     /// Issued at time.
     pub iat: i64,
-    // The time when the authentication of the user occured.
     /// Time when the user originally authenticated.
-    pub auth_time: i64,
+    pub auth_time: Option<i64>,
     /// Comes from authn req
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nonce: Option<String>,
@@ -47,12 +94,15 @@ pub struct OidcToken {
     /// List of auth methods
     #[serde(skip_serializing_if = "Option::is_none")]
     pub amr: Option<Vec<String>>,
-    ///
+    /// Do not use.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub azp: Option<String>,
     /// -- not used.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jti: Option<String>,
+    /// Standardised or common claims
+    #[serde(flatten)]
+    pub s_claims: OidcClaims,
     /// Arbitrary custom claims can be inserted or decoded here.
     #[serde(flatten, skip_serializing_if = "btreemap_empty")]
     pub claims: BTreeMap<String, serde_json::value::Value>,
@@ -66,6 +116,10 @@ impl OidcToken {
         jwk: Option<Jwk>,
     ) -> Result<OidcSigned, JwtError> {
         // We need to convert this payload to a set of bytes.
+        eprintln!(
+            "✅ {}",
+            serde_json::to_string(&self).map_err(|_| JwtError::InvalidJwt)?
+        );
         let payload = serde_json::to_vec(&self).map_err(|_| JwtError::InvalidJwt)?;
 
         let jws = Jws::new(payload).set_typ("JWT".to_string());
@@ -132,7 +186,7 @@ impl fmt::Display for OidcSigned {
 
 #[cfg(test)]
 mod tests {
-    use super::{OidcToken, OidcUnverified};
+    use super::{OidcSubject, OidcToken, OidcUnverified};
     use crate::crypto::{JwsSigner, JwsValidator};
     use std::convert::TryFrom;
     use std::str::FromStr;
@@ -142,17 +196,18 @@ mod tests {
     fn test_sign_and_validate() {
         let jwt = OidcToken {
             iss: Url::parse("https://oidc.example.com").unwrap(),
-            sub: "6f5ac8d0-8b7b-4a30-8504-e26a43c7a574".to_string(),
+            sub: OidcSubject::S("a unique id".to_string()),
             aud: "test".to_string(),
             exp: 0,
             nbf: Some(0),
             iat: 0,
-            auth_time: 0,
+            auth_time: None,
             nonce: None,
             acr: None,
             amr: None,
             azp: None,
             jti: None,
+            s_claims: Default::default(),
             claims: Default::default(),
         };
 
@@ -175,17 +230,18 @@ mod tests {
     fn test_sign_and_validate_str() {
         let jwt = OidcToken {
             iss: Url::parse("https://oidc.example.com").unwrap(),
-            sub: "6f5ac8d0-8b7b-4a30-8504-e26a43c7a574".to_string(),
+            sub: OidcSubject::S("a unique id".to_string()),
             aud: "test".to_string(),
             exp: 0,
             nbf: Some(0),
             iat: 0,
-            auth_time: 0,
+            auth_time: None,
             nonce: None,
             acr: None,
             amr: None,
             azp: None,
             jti: None,
+            s_claims: Default::default(),
             claims: Default::default(),
         };
 

@@ -14,21 +14,22 @@
 //! use std::str::FromStr;
 //! use std::convert::TryFrom;
 //! use url::Url;
-//! use compact_jwt::{JwsValidator, JwsSigner, OidcToken, OidcUnverified};
+//! use compact_jwt::{JwsValidator, JwsSigner, OidcToken, OidcSubject, OidcUnverified};
 //!
 //! let oidc = OidcToken {
 //!         iss: Url::parse("https://oidc.example.com").unwrap(),
-//! #       sub: "6f5ac8d0-8b7b-4a30-8504-e26a43c7a574".to_string(),
+//!         sub: OidcSubject::S("UniqueId".to_string()),
 //! #       aud: "test".to_string(),
 //! #       exp: 0,
 //! #       nbf: Some(0),
 //! #       iat: 0,
-//! #       auth_time: 0,
+//! #       auth_time: Some(0),
 //! #       nonce: None,
 //! #       acr: None,
 //! #       amr: None,
 //! #       azp: None,
 //! #       jti: None,
+//! #       s_claims: Default::default(),
 //! #       claims: Default::default(),
 //!     };
 //!
@@ -68,10 +69,14 @@ pub mod oidc;
 
 pub use crate::crypto::{Jwk, JwsSigner, JwsValidator};
 pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};
-pub use crate::oidc::{OidcSigned, OidcToken, OidcUnverified};
+pub use crate::oidc::{OidcClaims, OidcSigned, OidcSubject, OidcToken, OidcUnverified};
 
 pub(crate) fn btreemap_empty(
     m: &std::collections::BTreeMap<String, serde_json::value::Value>,
 ) -> bool {
+    m.is_empty()
+}
+
+pub(crate) fn vec_empty(m: &Vec<String>) -> bool {
     m.is_empty()
 }
