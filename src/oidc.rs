@@ -1,6 +1,6 @@
 //! Oidc token implementation
 
-use crate::crypto::{Jwk, Jws, JwsCompact, JwsSigner, JwsValidator};
+use crate::crypto::{Jws, JwsCompact, JwsSigner, JwsValidator};
 use crate::error::JwtError;
 use crate::{btreemap_empty, vec_empty};
 use serde::{Deserialize, Serialize};
@@ -90,6 +90,9 @@ pub struct OidcToken {
     pub nonce: Option<String>,
     /// -- not used.
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub at_hash: Option<String>,
+    /// -- not used.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub acr: Option<String>,
     /// List of auth methods
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -109,12 +112,7 @@ pub struct OidcToken {
 }
 
 impl OidcToken {
-    fn sign_inner(
-        &self,
-        signer: &JwsSigner,
-        jku: Option<Url>,
-        jwk: Option<Jwk>,
-    ) -> Result<OidcSigned, JwtError> {
+    fn sign_inner(&self, signer: &JwsSigner, kid: Option<&str>) -> Result<OidcSigned, JwtError> {
         // We need to convert this payload to a set of bytes.
         eprintln!(
             "✅ {}",
@@ -124,32 +122,61 @@ impl OidcToken {
 
         let jws = Jws::new(payload).set_typ("JWT".to_string());
 
-        jws.sign_inner(signer, jku, jwk)
+        let jws = if let Some(k) = kid {
+            jws.set_kid(k.to_string())
+        } else {
+            jws
+        };
+
+        jws.sign_inner(signer, None, None)
             .map(|jwsc| OidcSigned { jwsc })
     }
 
     /// Use this private signer to created a signed oidc token.
     pub fn sign(&self, signer: &JwsSigner) -> Result<OidcSigned, JwtError> {
-        self.sign_inner(signer, None, None)
+        self.sign_inner(signer, None)
     }
 
+    /// set the key id (kid) into the header.
+    /// use set_kid on jws.
+    pub fn sign_with_kid(&self, signer: &JwsSigner, kid: &str) -> Result<OidcSigned, JwtError> {
+        self.sign_inner(signer, Some(kid))
+    }
+
+    /*
     /// Use this private signer to created a signed oidc token, which contains the public
     /// key for verification embedded in the header of the token.
     pub fn sign_embed_public_jwk(&self, signer: &JwsSigner) -> Result<OidcSigned, JwtError> {
         let jwk = signer.public_key_as_jwk()?;
         self.sign_inner(signer, None, Some(jwk))
     }
+    */
 }
 
 impl OidcUnverified {
     /// Using this JwsValidator, assert the correct signature of the data contained in
-    /// this token.
-    pub fn validate(&self, validator: &JwsValidator) -> Result<OidcToken, JwtError> {
+    /// this token. The current time is represented by seconds since the epoch. You may
+    /// choose to ignore exp validation by setting this to 0, but this is DANGEROUS.
+    pub fn validate(&self, validator: &JwsValidator, curtime: i64) -> Result<OidcToken, JwtError> {
         let released = self.jwsc.validate(&validator)?;
 
-        serde_json::from_slice(released.payload()).map_err(|_| JwtError::InvalidJwt)
+        let tok: OidcToken =
+            serde_json::from_slice(released.payload()).map_err(|_| JwtError::InvalidJwt)?;
+
+        // Check the exp
+        if tok.exp != 0 && tok.exp < curtime {
+            Err(JwtError::OidcTokenExpired)
+        } else {
+            Ok(tok)
+        }
     }
 
+    /// Retrieve the Key ID used to sign this jwt, if any.
+    pub fn get_jwk_kid(&self) -> Option<&str> {
+        self.jwsc.get_jwk_kid()
+    }
+
+    /*
     /// Retrieve the URL which holds the public key used to sign this token if it exists
     /// in the JWS header.
     pub fn get_jwk_pubkey_url(&self) -> Option<&Url> {
@@ -160,6 +187,7 @@ impl OidcUnverified {
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
         self.jwsc.get_jwk_pubkey()
     }
+    */
 }
 
 impl FromStr for OidcUnverified {
@@ -203,6 +231,7 @@ mod tests {
             iat: 0,
             auth_time: None,
             nonce: None,
+            at_hash: None,
             acr: None,
             amr: None,
             azp: None,
@@ -220,7 +249,7 @@ mod tests {
         let jwtu = jwts.invalidate();
 
         let released = jwtu
-            .validate(&jws_validator)
+            .validate(&jws_validator, 0)
             .expect("Unable to validate jwt");
 
         assert!(released == jwt);
@@ -237,6 +266,7 @@ mod tests {
             iat: 0,
             auth_time: None,
             nonce: None,
+            at_hash: None,
             acr: None,
             amr: None,
             azp: None,
@@ -256,7 +286,7 @@ mod tests {
         let jwtu = OidcUnverified::from_str(&jwt_str).expect("Unable to parse jws/jwt");
 
         let released = jwtu
-            .validate(&jws_validator)
+            .validate(&jws_validator, 0)
             .expect("Unable to validate jwt");
 
         assert!(released == jwt);

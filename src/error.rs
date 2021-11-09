@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Clone, Deserialize)]
+#[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
 /// An error in the JWT library
 pub enum JwtError {
     /// Invalid Token - May not be in correct compact form
@@ -21,4 +21,8 @@ pub enum JwtError {
     OpenSSLError,
     /// Incorrect Algorithm for verification
     ValidatorAlgMismatch,
+    /// Invalid JWT Key ID
+    InvalidJwtKid,
+    /// The Token has expired
+    OidcTokenExpired,
 }

@@ -152,7 +152,6 @@ impl Jws {
         }
     }
 
-    #[allow(dead_code)]
     pub fn set_kid(mut self, kid: String) -> Self {
         self.header.kid = Some(kid);
         self
@@ -258,10 +257,17 @@ impl JwsCompact {
         chk_input == &self.sign_input && chk_sig == &self.signature
     }
 
+    #[allow(dead_code)]
+    pub fn get_jwk_kid(&self) -> Option<&str> {
+        self.header.kid.as_ref().map(|s| s.as_str())
+    }
+
+    #[allow(dead_code)]
     pub fn get_jwk_pubkey_url(&self) -> Option<&Url> {
         self.header.jku.as_ref()
     }
 
+    #[allow(dead_code)]
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
         self.header.jwk.as_ref()
     }

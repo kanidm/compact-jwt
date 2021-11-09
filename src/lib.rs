@@ -13,6 +13,7 @@
 //! ```
 //! use std::str::FromStr;
 //! use std::convert::TryFrom;
+//! use std::time::SystemTime;
 //! use url::Url;
 //! use compact_jwt::{JwsValidator, JwsSigner, OidcToken, OidcSubject, OidcUnverified};
 //!
@@ -25,6 +26,7 @@
 //! #       iat: 0,
 //! #       auth_time: Some(0),
 //! #       nonce: None,
+//! #       at_hash: None,
 //! #       acr: None,
 //! #       amr: None,
 //! #       azp: None,
@@ -53,8 +55,13 @@
 //! let oidc_unverified = OidcUnverified::from_str(&token_str)
 //!     .unwrap();
 //!
+//! let curtime = SystemTime::now()
+//!     .duration_since(SystemTime::UNIX_EPOCH)
+//!     .expect("Failed to retrieve current time")
+//!     .as_secs() as i64;
+//!
 //! let oidc_validated = oidc_unverified
-//!     .validate(&jws_validator)
+//!     .validate(&jws_validator, curtime)
 //!     .unwrap();
 //!
 //! // Prove we got back the same content.
@@ -68,6 +75,7 @@ pub mod jwt;
 pub mod oidc;
 
 pub use crate::crypto::{Jwk, JwsSigner, JwsValidator};
+pub use crate::error::JwtError;
 pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};
 pub use crate::oidc::{OidcClaims, OidcSigned, OidcSubject, OidcToken, OidcUnverified};
 
