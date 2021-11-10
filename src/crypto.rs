@@ -12,6 +12,13 @@ use crate::error::JwtError;
 
 // https://datatracker.ietf.org/doc/html/rfc7515
 
+#[derive(Debug, Serialize, Clone, Deserialize)]
+/// A set of jwk keys
+pub struct JwkKeySet {
+    /// The set of jwks
+    pub keys: Vec<Jwk>,
+}
+
 #[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
 #[allow(non_camel_case_types)]
 /// Valid Eliptic Curves
@@ -37,12 +44,33 @@ pub enum Jwk {
         // We don't decode d (private key) because that way we error defending from
         // the fact that ... well you leaked your private key.
         // d: Base64UrlSafeData
+        /// The algorithm in use for this key
+        #[serde(skip_serializing_if = "Option::is_none")]
+        alg: Option<JwaAlg>,
+        #[serde(rename = "use", skip_serializing_if = "Option::is_none")]
+        /// The usage of this key
+        use_: Option<JwkUse>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        /// The key id
+        kid: Option<String>,
     },
 }
 
-#[derive(Debug, Serialize, Clone, Deserialize)]
+#[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+/// What this key is used for
+pub enum JwkUse {
+    /// This key is for signing.
+    Sig,
+    /// This key is for encryption
+    Enc,
+}
+
+#[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
 #[allow(non_camel_case_types)]
-enum JwaAlg {
+/// Cryptographic algorithm
+pub enum JwaAlg {
+    /// ECDSA with P-256 and SHA256
     ES256,
 }
 
@@ -170,7 +198,7 @@ impl Jws {
 
     #[cfg(test)]
     pub fn sign_embed_public_jwk(&self, signer: &JwsSigner) -> Result<JwsCompact, JwtError> {
-        let jwk = signer.public_key_as_jwk()?;
+        let jwk = signer.public_key_as_jwk(None)?;
         self.sign_inner(signer, None, Some(jwk))
     }
 
@@ -374,7 +402,14 @@ impl TryFrom<&Jwk> for JwsValidator {
 
     fn try_from(value: &Jwk) -> Result<Self, Self::Error> {
         match value {
-            Jwk::EC { crv, x, y } => {
+            Jwk::EC {
+                crv,
+                x,
+                y,
+                alg: _,
+                use_: _,
+                kid: _,
+            } => {
                 let (curve, digest) = match crv {
                     EcCurve::P256 => (nid::Nid::X9_62_PRIME256V1, hash::MessageDigest::sha256()),
                 };
@@ -482,7 +517,7 @@ impl JwsSigner {
     }
 
     /// Export the public key of this signer as a Jwk
-    pub fn public_key_as_jwk(&self) -> Result<Jwk, JwtError> {
+    pub fn public_key_as_jwk(&self, kid: Option<&str>) -> Result<Jwk, JwtError> {
         match self {
             JwsSigner::ES256 { skey, digest: _ } => {
                 let pkey = skey.public_key();
@@ -516,6 +551,9 @@ impl JwsSigner {
                     crv: EcCurve::P256,
                     x: Base64UrlSafeData(public_key_x),
                     y: Base64UrlSafeData(public_key_y),
+                    alg: Some(JwaAlg::ES256),
+                    use_: Some(JwkUse::Sig),
+                    kid: kid.map(str::to_string),
                 })
             }
         }
@@ -624,7 +662,7 @@ mod tests {
 
         assert!(jwsc.get_jwk_pubkey_url().is_none());
         let pub_jwk = jwsc.get_jwk_pubkey().expect("No embeded public jwk!");
-        assert!(*pub_jwk == jwss.public_key_as_jwk().unwrap());
+        assert!(*pub_jwk == jwss.public_key_as_jwk(None).unwrap());
 
         let jws_validator = JwsValidator::try_from(pub_jwk).expect("Unable to create validator");
 

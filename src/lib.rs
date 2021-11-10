@@ -46,7 +46,7 @@
 //!
 //! // Build a validator from the public key of the signer. In a client scenario
 //! // you would get this public jwk from the oidc authorisation server.
-//! let public_jwk = jws_signer.public_key_as_jwk()
+//! let public_jwk = jws_signer.public_key_as_jwk(Some("my_key_id"))
 //!     .unwrap();
 //! let jws_validator = JwsValidator::try_from(&public_jwk)
 //!     .unwrap();
@@ -74,7 +74,7 @@ pub mod error;
 pub mod jwt;
 pub mod oidc;
 
-pub use crate::crypto::{Jwk, JwsSigner, JwsValidator};
+pub use crate::crypto::{Jwk, JwkKeySet, JwsSigner, JwsValidator};
 pub use crate::error::JwtError;
 pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};
 pub use crate::oidc::{OidcClaims, OidcSigned, OidcSubject, OidcToken, OidcUnverified};
