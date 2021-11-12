@@ -255,9 +255,13 @@ impl Jws {
         .map_err(|_| JwtError::OpenSSLError)?;
 
         let mut r = [0; 32];
-        r.copy_from_slice(ec_sig.r().to_vec().as_slice());
+        let r_vec = ec_sig.r().to_vec();
+        let (_left, right) = r.split_at_mut(32 - r_vec.len());
+        right.copy_from_slice(r_vec.as_slice());
         let mut s = [0; 32];
-        s.copy_from_slice(ec_sig.s().to_vec().as_slice());
+        let s_vec = ec_sig.s().to_vec();
+        let (_left, right) = s.split_at_mut(32 - s_vec.len());
+        right.copy_from_slice(s_vec.as_slice());
 
         // eprintln!("r {:?}", r);
         // eprintln!("s {:?}", s);
