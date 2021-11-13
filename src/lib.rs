@@ -74,7 +74,7 @@ pub mod error;
 pub mod jwt;
 pub mod oidc;
 
-pub use crate::crypto::{Jwk, JwkKeySet, JwsSigner, JwsValidator, JwkUse, JwaAlg};
+pub use crate::crypto::{JwaAlg, Jwk, JwkKeySet, JwkUse, JwsSigner, JwsValidator};
 pub use crate::error::JwtError;
 pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};
 pub use crate::oidc::{OidcClaims, OidcSigned, OidcSubject, OidcToken, OidcUnverified};
