@@ -160,7 +160,7 @@ mod tests {
         let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
 
         let jwt_str = jwts.to_string();
-        eprintln!("{}", jwt_str);
+        trace!("{}", jwt_str);
         let jwtu = JwtUnverified::from_str(&jwt_str).expect("Unable to parse jws/jwt");
 
         let released = jwtu

@@ -114,7 +114,7 @@ pub struct OidcToken {
 impl OidcToken {
     fn sign_inner(&self, signer: &JwsSigner, kid: Option<&str>) -> Result<OidcSigned, JwtError> {
         // We need to convert this payload to a set of bytes.
-        eprintln!(
+        trace!(
             "✅ {}",
             serde_json::to_string(&self).map_err(|_| JwtError::InvalidJwt)?
         );
@@ -282,7 +282,7 @@ mod tests {
         let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
 
         let jwt_str = jwts.to_string();
-        eprintln!("{}", jwt_str);
+        trace!("{}", jwt_str);
         let jwtu = OidcUnverified::from_str(&jwt_str).expect("Unable to parse jws/jwt");
 
         let released = jwtu

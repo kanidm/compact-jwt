@@ -274,11 +274,11 @@ impl Jws {
             .map(|bytes| base64::encode_config(&bytes, base64::URL_SAFE_NO_PAD))?;
         let payload_b64 = base64::encode_config(&self.payload, base64::URL_SAFE_NO_PAD);
 
-        // eprintln!("sinput -> {}", format!("{}.{}", hdr_b64, payload_b64));
+        // trace!("sinput -> {}", format!("{}.{}", hdr_b64, payload_b64));
 
         let sign_input = format!("{}.{}", hdr_b64, payload_b64).as_bytes().to_vec();
 
-        eprintln!("sinput -> {:?}", sign_input);
+        trace!("sinput -> {:?}", sign_input);
 
         // Compute the signature!
         let signature = match signer {
@@ -297,8 +297,8 @@ impl Jws {
                 let (_left, right) = s.split_at_mut(32 - s_vec.len());
                 right.copy_from_slice(s_vec.as_slice());
 
-                // eprintln!("r {:?}", r);
-                // eprintln!("s {:?}", s);
+                // trace!("r {:?}", r);
+                // trace!("s {:?}", s);
 
                 let mut signature = Vec::with_capacity(64);
                 signature.extend_from_slice(&r);
@@ -724,6 +724,7 @@ mod tests {
 
     #[test]
     fn rfc7515_es256_validation_example() {
+        let _ = tracing_subscriber::fmt().try_init();
         let test_jws = "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS9pc19yb290Ijp0cnVlfQ.DtEhU3ljbEg8L38VWAfUAqOyKAM6-Xx-F4GawxaepmXFCgfTjDxw5djxLa8ISlSApmWQxfKTUJqPP3-Kg6NU1Q";
 
         let jwsc = JwsCompact::from_str(test_jws).unwrap();
@@ -754,7 +755,7 @@ mod tests {
         let pkey = r#"{"kty":"EC","crv":"P-256","x":"f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU","y":"x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0"}"#;
 
         let pkey: Jwk = serde_json::from_str(pkey).expect("Invalid JWK");
-        eprintln!("jwk -> {:?}", pkey);
+        trace!("jwk -> {:?}", pkey);
 
         let jws_validator = JwsValidator::try_from(&pkey).expect("Unable to create validator");
         assert!(jwsc.get_jwk_pubkey_url().is_none());
@@ -762,11 +763,12 @@ mod tests {
         let released = jwsc
             .validate(&jws_validator)
             .expect("Unable to validate jws");
-        eprintln!("rel -> {:?}", released);
+        trace!("rel -> {:?}", released);
     }
 
     #[test]
     fn rfc7515_es256_signature_example() {
+        let _ = tracing_subscriber::fmt().try_init();
         // https://docs.rs/openssl/0.10.36/openssl/ec/struct.EcKey.html#method.from_private_components
         let jwss = JwsSigner::from_es256_jwk_components(
             "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
@@ -790,14 +792,14 @@ mod tests {
         let pkey = r#"{"kty":"EC","crv":"P-256","x":"f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU","y":"x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0"}"#;
 
         let pkey: Jwk = serde_json::from_str(pkey).expect("Invalid JWK");
-        eprintln!("jwk -> {:?}", pkey);
+        trace!("jwk -> {:?}", pkey);
 
         let jws_validator = JwsValidator::try_from(&pkey).expect("Unable to create validator");
 
         let released = jwsc
             .validate(&jws_validator)
             .expect("Unable to validate jws");
-        eprintln!("rel -> {:?}", released);
+        trace!("rel -> {:?}", released);
     }
 
     #[test]
@@ -832,6 +834,7 @@ mod tests {
     // https://datatracker.ietf.org/doc/html/rfc7515#appendix-A.2
     #[test]
     fn rfc7515_rs256_validation_example() {
+        let _ = tracing_subscriber::fmt().try_init();
         let test_jws = "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS9pc19yb290Ijp0cnVlfQ.cC4hiUPoj9Eetdgtv3hF80EGrhuB__dzERat0XF9g2VtQgr9PJbu3XOiZj5RZmh7AAuHIm4Bh-0Qc_lF5YKt_O8W2Fp5jujGbds9uJdbF9CUAr7t1dnZcAcQjbKBYNX4BAynRFdiuB--f_nZLgrnbyTyWzO75vRK5h6xBArLIARNPvkSjtQBMHlb1L07Qe7K0GarZRmB_eSN9383LcOLn6_dO--xi12jzDwusC-eOkHWEsqtFZESc6BfI7noOPqvhJ1phCnvWh6IeYI2w9QOYEUipUTI8np6LbgGY9Fs98rqVt5AXLIhWkWywlVmtVrBp0igcN_IoypGlUPQGe77Rw";
 
         let jwsc = JwsCompact::from_str(test_jws).unwrap();
@@ -877,7 +880,7 @@ mod tests {
         }"#;
 
         let pkey: Jwk = serde_json::from_str(pkey).expect("Invalid JWK");
-        eprintln!("jwk -> {:?}", pkey);
+        trace!("jwk -> {:?}", pkey);
 
         let jws_validator = JwsValidator::try_from(&pkey).expect("Unable to create validator");
         assert!(jwsc.get_jwk_pubkey_url().is_none());
@@ -885,11 +888,12 @@ mod tests {
         let released = jwsc
             .validate(&jws_validator)
             .expect("Unable to validate jws");
-        eprintln!("rel -> {:?}", released);
+        trace!("rel -> {:?}", released);
     }
 
     #[test]
     fn rs256_key_generate_cycle() {
+        let _ = tracing_subscriber::fmt().try_init();
         let jwss = JwsSigner::generate_legacy_rs256().expect("failed to construct signer.");
 
         let der = jwss.private_key_to_der().expect("Failed to extract DER");

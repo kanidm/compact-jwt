@@ -68,6 +68,9 @@
 //! assert!(oidc_validated == oidc);
 //! ```
 
+#[macro_use]
+extern crate tracing;
+
 pub mod base64_data;
 pub mod crypto;
 pub mod error;

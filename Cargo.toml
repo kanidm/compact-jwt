@@ -17,3 +17,7 @@ base64 = "0.13"
 openssl = "0.10"
 url = { version = "2", features = ["serde"] }
 uuid = { version = "0.8", features = ["serde"] }
+tracing = "0.1"
+
+[dev-dependencies]
+tracing-subscriber = "0.2"
