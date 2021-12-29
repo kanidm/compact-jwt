@@ -158,7 +158,7 @@ impl OidcUnverified {
     /// this token. The current time is represented by seconds since the epoch. You may
     /// choose to ignore exp validation by setting this to 0, but this is DANGEROUS.
     pub fn validate(&self, validator: &JwsValidator, curtime: i64) -> Result<OidcToken, JwtError> {
-        let released = self.jwsc.validate(&validator)?;
+        let released = self.jwsc.validate(validator)?;
 
         let tok: OidcToken =
             serde_json::from_slice(released.payload()).map_err(|_| JwtError::InvalidJwt)?;

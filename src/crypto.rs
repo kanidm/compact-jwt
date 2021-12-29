@@ -286,7 +286,7 @@ impl Jws {
                 let hashout =
                     hash::hash(*digest, &sign_input).map_err(|_| JwtError::OpenSSLError)?;
                 let ec_sig =
-                    ecdsa::EcdsaSig::sign(&hashout, &skey).map_err(|_| JwtError::OpenSSLError)?;
+                    ecdsa::EcdsaSig::sign(&hashout, skey).map_err(|_| JwtError::OpenSSLError)?;
 
                 let mut r = [0; 32];
                 let r_vec = ec_sig.r().to_vec();
@@ -342,7 +342,7 @@ impl JwsCompact {
 
     #[allow(dead_code)]
     pub fn get_jwk_kid(&self) -> Option<&str> {
-        self.header.kid.as_ref().map(|s| s.as_str())
+        self.header.kid.as_deref()
     }
 
     #[allow(dead_code)]
@@ -374,7 +374,7 @@ impl JwsCompact {
                     hash::hash(*digest, &self.sign_input).map_err(|_| JwtError::OpenSSLError)?;
 
                 if sig
-                    .verify(&hashout, &pkey)
+                    .verify(&hashout, pkey)
                     .map_err(|_| JwtError::OpenSSLError)?
                 {
                     Ok(Jws {
@@ -425,7 +425,7 @@ impl FromStr for JwsCompact {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // split on the ".".
-        let mut siter = s.splitn(3, ".");
+        let mut siter = s.splitn(3, '.');
 
         let hdr_str = siter.next().ok_or(JwtError::InvalidCompactFormat)?;
 
@@ -574,7 +574,7 @@ impl JwsSigner {
                     .map_err(|_| JwtError::OpenSSLError)
                     .map(|pkey| JwsValidator::ES256 {
                         pkey,
-                        digest: digest.clone(),
+                        digest: *digest,
                     })
             }
             JwsSigner::RS256 { skey, digest } => {
@@ -584,7 +584,7 @@ impl JwsSigner {
                     .map_err(|_| JwtError::OpenSSLError)
                     .map(|pkey| JwsValidator::RS256 {
                         pkey,
-                        digest: digest.clone(),
+                        digest: *digest,
                     })
             }
         }
@@ -666,7 +666,7 @@ impl JwsSigner {
 
                 let mut ybn = bn::BigNum::new().map_err(|_| JwtError::OpenSSLError)?;
 
-                pkey.affine_coordinates_gfp(&ec_group, &mut xbn, &mut ybn, &mut bnctx)
+                pkey.affine_coordinates_gfp(ec_group, &mut xbn, &mut ybn, &mut bnctx)
                     .map_err(|_| JwtError::OpenSSLError)?;
 
                 let mut public_key_x = Vec::with_capacity(32);

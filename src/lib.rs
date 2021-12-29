@@ -88,6 +88,6 @@ pub(crate) fn btreemap_empty(
     m.is_empty()
 }
 
-pub(crate) fn vec_empty(m: &Vec<String>) -> bool {
+pub(crate) fn vec_empty(m: &[String]) -> bool {
     m.is_empty()
 }

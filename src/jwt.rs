@@ -20,7 +20,7 @@ pub struct JwtSigned {
 }
 
 /// A Jwt that is being created or has succeeded in being validated
-#[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
+#[derive(Default, Debug, Serialize, Clone, Deserialize, PartialEq)]
 pub struct Jwt {
     /// The issuer of this token
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -46,21 +46,6 @@ pub struct Jwt {
     /// Arbitrary custom claims can be inserted or decoded here.
     #[serde(flatten, skip_serializing_if = "btreemap_empty")]
     pub claims: BTreeMap<String, serde_json::value::Value>,
-}
-
-impl Default for Jwt {
-    fn default() -> Self {
-        Jwt {
-            iss: None,
-            sub: None,
-            aud: None,
-            exp: None,
-            nbf: None,
-            iat: None,
-            jti: None,
-            claims: BTreeMap::new(),
-        }
-    }
 }
 
 impl Jwt {
@@ -89,7 +74,7 @@ impl JwtUnverified {
     /// Using this JwsValidator, assert the correct signature of the data contained in
     /// this jwt.
     pub fn validate(&self, validator: &JwsValidator) -> Result<Jwt, JwtError> {
-        let released = self.jwsc.validate(&validator)?;
+        let released = self.jwsc.validate(validator)?;
 
         serde_json::from_slice(released.payload()).map_err(|_| JwtError::InvalidJwt)
     }

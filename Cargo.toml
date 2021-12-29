@@ -1,7 +1,7 @@
 [package]
 name = "compact_jwt"
 version = "0.1.8"
-edition = "2018"
+edition = "2021"
 authors = ["William Brown <william@blackhats.net.au>"]
 description = "Minimal implementation of JWT for OIDC"
 repository = "https://github.com/kanidm/compact_jwt"
