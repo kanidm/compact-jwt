@@ -25,4 +25,10 @@ pub enum JwtError {
     InvalidJwtKid,
     /// The Token has expired
     OidcTokenExpired,
+    /// No embeded JWK is available
+    EmbededJwkNotAvailable,
+    /// Jwk public key export denied
+    JwkPublicKeyDenied,
+    /// Private key export denied
+    PrivateKeyDenied,
 }

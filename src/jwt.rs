@@ -1,8 +1,9 @@
 //! Jwt implementation
 
 use crate::btreemap_empty;
-use crate::crypto::{Jwk, Jws, JwsCompact, JwsSigner, JwsValidator};
+use crate::crypto::{Jwk, JwsCompact, JwsInner, JwsSigner, JwsValidator};
 use crate::error::JwtError;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -20,8 +21,11 @@ pub struct JwtSigned {
 }
 
 /// A Jwt that is being created or has succeeded in being validated
-#[derive(Default, Debug, Serialize, Clone, Deserialize, PartialEq)]
-pub struct Jwt {
+#[derive(Serialize, Clone, Deserialize)]
+pub struct Jwt<V>
+where
+    V: Clone,
+{
     /// The issuer of this token
     #[serde(skip_serializing_if = "Option::is_none")]
     pub iss: Option<String>,
@@ -43,12 +47,75 @@ pub struct Jwt {
     /// -- not used.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jti: Option<String>,
-    /// Arbitrary custom claims can be inserted or decoded here.
+    /// If you wish to include extensions as a struct, you can use this struct. If you do
+    /// not have extensions, set this type to () with `Jwt<()>` and it will be skipped.
+    #[serde(flatten)]
+    pub extensions: V,
+    /// Arbitrary custom claims can be inserted or decoded here. These allow you
+    /// to add or detect other claims that may or may not be in your extension struct
     #[serde(flatten, skip_serializing_if = "btreemap_empty")]
     pub claims: BTreeMap<String, serde_json::value::Value>,
 }
 
-impl Jwt {
+impl<V> Default for Jwt<V>
+where
+    V: Clone + Default,
+{
+    fn default() -> Self {
+        Jwt {
+            iss: None,
+            sub: None,
+            aud: None,
+            exp: None,
+            nbf: None,
+            iat: None,
+            jti: None,
+            extensions: V::default(),
+            claims: BTreeMap::default(),
+        }
+    }
+}
+
+impl<V> fmt::Debug for Jwt<V>
+where
+    V: Clone + fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Jwt")
+            .field("iss", &self.iss)
+            .field("sub", &self.sub)
+            .field("aud", &self.aud)
+            .field("exp", &self.exp)
+            .field("nbf", &self.nbf)
+            .field("iat", &self.iat)
+            .field("jti", &self.jti)
+            .field("extensions", &self.extensions)
+            .field("claims", &self.claims)
+            .finish()
+    }
+}
+
+impl<V> PartialEq for Jwt<V>
+where
+    V: Clone + PartialEq,
+{
+    fn eq(&self, other: &Jwt<V>) -> bool {
+        self.iss == other.iss
+            && self.sub == other.sub
+            && self.aud == other.aud
+            && self.exp == other.exp
+            && self.nbf == other.nbf
+            && self.iat == other.iat
+            && self.jti == other.jti
+            && self.extensions == other.extensions
+            && self.claims == other.claims
+    }
+}
+
+impl<V> Jwt<V>
+where
+    V: Clone + Serialize,
+{
     fn sign_inner(
         &self,
         signer: &JwsSigner,
@@ -56,9 +123,10 @@ impl Jwt {
         jwk: Option<Jwk>,
     ) -> Result<JwtSigned, JwtError> {
         // We need to convert this payload to a set of bytes.
+        // eprintln!("{:?}", serde_json::to_string(&self));
         let payload = serde_json::to_vec(&self).map_err(|_| JwtError::InvalidJwt)?;
 
-        let jws = Jws::new(payload).set_typ("JWT".to_string());
+        let jws = JwsInner::new(payload).set_typ("JWT".to_string());
 
         jws.sign_inner(signer, jku, jwk)
             .map(|jwsc| JwtSigned { jwsc })
@@ -68,15 +136,29 @@ impl Jwt {
     pub fn sign(&self, signer: &JwsSigner) -> Result<JwtSigned, JwtError> {
         self.sign_inner(signer, None, None)
     }
+
+    /// Use this to create a signed jwt that includes the public key used in the signing process
+    pub fn sign_embed_public_jwk(&self, signer: &JwsSigner) -> Result<JwtSigned, JwtError> {
+        let jwk = signer.public_key_as_jwk(None)?;
+        self.sign_inner(signer, None, Some(jwk))
+    }
 }
 
 impl JwtUnverified {
     /// Using this JwsValidator, assert the correct signature of the data contained in
     /// this jwt.
-    pub fn validate(&self, validator: &JwsValidator) -> Result<Jwt, JwtError> {
+    pub fn validate<V>(&self, validator: &JwsValidator) -> Result<Jwt<V>, JwtError>
+    where
+        V: Clone + DeserializeOwned,
+    {
         let released = self.jwsc.validate(validator)?;
 
         serde_json::from_slice(released.payload()).map_err(|_| JwtError::InvalidJwt)
+    }
+
+    /// Get the embedded public key used to sign this jwt, if present.
+    pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
+        self.jwsc.get_jwk_pubkey()
     }
 }
 
@@ -106,12 +188,18 @@ impl fmt::Display for JwtSigned {
 mod tests {
     use super::{Jwt, JwtUnverified};
     use crate::crypto::{JwsSigner, JwsValidator};
+    use serde::{Deserialize, Serialize};
     use std::convert::TryFrom;
     use std::str::FromStr;
 
+    #[derive(Default, Debug, Serialize, Clone, Deserialize, PartialEq)]
+    struct CustomExtension {
+        my_exten: String,
+    }
+
     #[test]
     fn test_sign_and_validate() {
-        let jwt = Jwt {
+        let jwt: Jwt<()> = Jwt {
             iss: Some("test".to_string()),
             ..Default::default()
         };
@@ -129,11 +217,29 @@ mod tests {
             .expect("Unable to validate jwt");
 
         assert!(released == jwt);
+
+        let jwt = Jwt {
+            iss: Some("test".to_string()),
+            extensions: CustomExtension {
+                my_exten: "Hello".to_string(),
+            },
+            ..Default::default()
+        };
+
+        let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
+
+        let jwtu = jwts.invalidate();
+
+        let released = jwtu
+            .validate(&jws_validator)
+            .expect("Unable to validate jwt");
+
+        assert!(released == jwt);
     }
 
     #[test]
     fn test_sign_and_validate_str() {
-        let jwt = Jwt {
+        let jwt = Jwt::<()> {
             iss: Some("test".to_string()),
             ..Default::default()
         };

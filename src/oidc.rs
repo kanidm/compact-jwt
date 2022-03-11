@@ -1,6 +1,6 @@
 //! Oidc token implementation
 
-use crate::crypto::{Jws, JwsCompact, JwsSigner, JwsValidator};
+use crate::crypto::{JwsCompact, JwsInner, JwsSigner, JwsValidator};
 use crate::error::JwtError;
 use crate::{btreemap_empty, vec_empty};
 use serde::{Deserialize, Serialize};
@@ -120,7 +120,7 @@ impl OidcToken {
         );
         let payload = serde_json::to_vec(&self).map_err(|_| JwtError::InvalidJwt)?;
 
-        let jws = Jws::new(payload).set_typ("JWT".to_string());
+        let jws = JwsInner::new(payload).set_typ("JWT".to_string());
 
         let jws = if let Some(k) = kid {
             jws.set_kid(k.to_string())
