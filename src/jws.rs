@@ -8,6 +8,7 @@ use std::str::FromStr;
 use url::Url;
 
 /// An unverified jws input which is ready to validate
+#[derive(Debug)]
 pub struct JwsUnverified {
     jwsc: JwsCompact,
 }
@@ -111,11 +112,16 @@ impl JwsUnverified {
         V: Clone + DeserializeOwned,
     {
         // If possible, validate using the embedded JWK
-        let pub_jwk = self
-            .get_jwk_pubkey()
-            .ok_or(JwtError::EmbededJwkNotAvailable)?;
-
-        let jwsv = JwsValidator::try_from(pub_jwk)?;
+        let pub_jwk = self.get_jwk_pubkey();
+        let pub_x5c = self.get_x5c_pubkey();
+        let jwsv = match (pub_jwk, pub_x5c) {
+            (None, Ok(None)) => Err(JwtError::EmbededJwkNotAvailable),
+            // fix this error
+            (Some(_), Ok(Some(_)) | Err(_)) => Err(JwtError::PrivateKeyDenied),
+            (None, Err(err)) => Err(err),
+            (Some(jwk), Ok(None)) => jwk.try_into(),
+            (None, Ok(Some(x5c))) => x5c.try_into(),
+        }?;
 
         self.validate(&jwsv)
     }
@@ -123,6 +129,11 @@ impl JwsUnverified {
     /// Get the embedded public key used to sign this jwt, if present.
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
         self.jwsc.get_jwk_pubkey()
+    }
+
+    /// Get the embedded public key used to sign this jwt, if present.
+    pub fn get_x5c_pubkey(&self) -> Result<Option<&openssl::x509::X509Ref>, JwtError> {
+        self.jwsc.get_x5c_pubkey()
     }
 }
 
