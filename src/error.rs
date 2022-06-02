@@ -29,6 +29,8 @@ pub enum JwtError {
     EmbededJwkNotAvailable,
     /// Jwk public key export denied
     JwkPublicKeyDenied,
+    /// X5c public key's cert chain didn't validate
+    X5cPublicKeyDenied,
     /// Private key export denied
     PrivateKeyDenied,
 }

@@ -11,6 +11,8 @@
 //!
 //! # Examples
 //! ```
+//! # #[cfg(feature = "openssl")]
+//! # {
 //! use std::str::FromStr;
 //! use std::convert::TryFrom;
 //! use std::time::SystemTime;
@@ -66,8 +68,10 @@
 //!
 //! // Prove we got back the same content.
 //! assert!(oidc_validated == oidc);
+//! # }
 //! ```
 
+#[allow(unused_imports)]
 #[macro_use]
 extern crate tracing;
 

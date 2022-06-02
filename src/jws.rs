@@ -7,12 +7,12 @@ use crate::crypto::{JwsInner, JwsSigner, JwsValidator};
 use url::Url;
 
 use crate::error::JwtError;
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
 /// An unverified jws input which is ready to validate
+#[derive(Debug)]
 pub struct JwsUnverified {
     jwsc: JwsCompact,
 }
@@ -104,7 +104,7 @@ impl JwsUnverified {
     /// this jwt.
     pub fn validate<V>(&self, validator: &JwsValidator) -> Result<Jws<V>, JwtError>
     where
-        V: Clone + DeserializeOwned,
+        V: Clone + serde::de::DeserializeOwned,
     {
         let released = self.jwsc.validate(validator)?;
 
@@ -115,17 +115,28 @@ impl JwsUnverified {
     /// this jwt.
     pub fn validate_embeded<V>(&self) -> Result<Jws<V>, JwtError>
     where
-        V: Clone + DeserializeOwned,
+        V: Clone + serde::de::DeserializeOwned,
     {
         // If possible, validate using the embedded JWK
-        let pub_jwk = self
-            .get_jwk_pubkey()
-            .ok_or(JwtError::EmbededJwkNotAvailable)?;
-
-        let jwsv = JwsValidator::try_from(pub_jwk)?;
+        let pub_jwk = self.get_jwk_pubkey();
+        let pub_x5c = self.get_x5c_pubkey();
+        let jwsv = match (pub_jwk, pub_x5c) {
+            (None, Ok(None)) => Err(JwtError::EmbededJwkNotAvailable),
+            // fix this error
+            (Some(_), Ok(Some(_)) | Err(_)) => Err(JwtError::PrivateKeyDenied),
+            (None, Err(err)) => Err(err),
+            (Some(jwk), Ok(None)) => jwk.try_into(),
+            (None, Ok(Some(x5c))) => x5c.try_into(),
+        }?;
 
         self.validate(&jwsv)
     }
+
+    /// Get the embedded public key used to sign this jwt, if present.
+    pub fn get_x5c_pubkey(&self) -> Result<Option<&openssl::x509::X509Ref>, JwtError> {
+        self.jwsc.get_x5c_pubkey()
+    }
+
 }
 
 impl JwsUnverified {
@@ -141,7 +152,7 @@ impl JwsUnverified {
     #[cfg(feature = "unsafe_release_without_verify")]
     pub fn unsafe_release_without_verification<V>(&self) -> Result<Jws<V>, JwtError>
     where
-        V: Clone + DeserializeOwned,
+        V: Clone + serde::de::DeserializeOwned,
     {
         let released = self.jwsc.release_without_verification()?;
 

@@ -1,7 +1,7 @@
 //! JWS Cryptographic Operations
 
 #[cfg(feature = "openssl")]
-use openssl::{bn, ec, ecdsa, hash, nid, pkey, rand, rsa, sign};
+use openssl::{bn, ec, ecdsa, hash, nid, pkey, rand, rsa, sign, stack, x509};
 #[cfg(feature = "openssl")]
 use std::convert::TryFrom;
 
@@ -163,6 +163,60 @@ impl fmt::Debug for JwsValidator {
     }
 }
 
+/*
+#[cfg(feature = "openssl")]
+mod x509_serde {
+    use openssl::x509;
+    use serde::de::{self, Deserialize, Visitor};
+    use serde::ser::{self, Serialize};
+    use std::fmt;
+
+    #[derive(Clone, Debug)]
+    pub(super) struct X509(pub x509::X509);
+
+    impl Serialize for X509 {
+        fn serialize<S>(self: &X509, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            let der = self.0.to_der().map_err(ser::Error::custom)?;
+            serializer.serialize_bytes(&der)
+        }
+    }
+
+    struct X509Visitor;
+
+    impl Visitor<'_> for X509Visitor {
+        type Value = X509;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("der-encoded bytes for an x509 certificate")
+        }
+
+        fn visit_bytes<E>(self, value: &[u8]) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            println!("before [from_der]");
+            println!("bytes: {value:?}");
+            let der_bytes = base64::decode(value).map_err(E::custom)?;
+            let x509 = x509::X509::from_der(&der_bytes).map_err(E::custom)?;
+            println!("after [from_der]");
+            Ok(X509(x509))
+        }
+    }
+
+    impl<'de> Deserialize<'de> for X509 {
+        fn deserialize<D>(deserializer: D) -> Result<X509, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            deserializer.deserialize_bytes(X509Visitor)
+        }
+    }
+}
+*/
+
 #[derive(Debug, Serialize, Clone, Deserialize)]
 struct ProtectedHeader {
     alg: JwaAlg,
@@ -183,8 +237,9 @@ struct ProtectedHeader {
     // We probably don't need these.
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
     x5u: Option<()>,
-    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
-    x5c: Option<()>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    x5c: Option<Vec<u8>>,
+    // x5c: Option<Vec<x509_serde::X509>>,
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
     x5t: Option<()>,
     #[serde(
@@ -229,6 +284,7 @@ impl From<&ProtectedHeader> for Header {
 pub(crate) struct JwsInner {
     #[allow(dead_code)]
     header: Header,
+    #[allow(dead_code)]
     payload: Vec<u8>,
 }
 
@@ -372,6 +428,7 @@ impl JwsInner {
     }
 }
 
+#[cfg(any(feature = "openssl", feature = "unsafe_release_without_verify"))]
 impl JwsInner {
     pub(crate) fn payload(&self) -> &[u8] {
         &self.payload
@@ -383,6 +440,61 @@ impl JwsCompact {
     #[cfg(test)]
     fn check_vectors(&self, chk_input: &[u8], chk_sig: &[u8]) -> bool {
         chk_input == &self.sign_input && chk_sig == &self.signature
+    }
+
+    /// return [Ok(None)] if the jws object's header's x5c field isn't populated
+    #[allow(dead_code)]
+    pub fn get_x5c_pubkey(&self) -> Result<Option<&x509::X509Ref>, JwtError> {
+        let fullchain = match &self.header.x5c {
+            Some(chain) => chain,
+            None => return Ok(None),
+        };
+
+        let (leaf, chain) = fullchain
+            .split_first()
+            .ok_or(JwtError::InvalidHeaderFormat)?;
+
+        let leaf = &leaf.0;
+
+        // Convert the chain to a stackref so that openssl can use it.
+        let mut chain_stack = stack::Stack::new().map_err(|_| JwtError::OpenSSLError)?;
+
+        for crt in chain.iter() {
+            chain_stack
+                .push(crt.0.clone())
+                .map_err(|_| JwtError::OpenSSLError)?;
+        }
+
+        // Create the x509 store that we will validate against.
+        let ca_store = x509::store::X509StoreBuilder::new()
+            .map_err(|_| JwtError::OpenSSLError)?
+            .build();
+
+        let mut ca_ctx = x509::X509StoreContext::new().map_err(|_| JwtError::OpenSSLError)?;
+
+        // Providing the cert and chain, validate we have a ref to our store.
+        let res = ca_ctx
+            .init(&ca_store, &leaf, &chain_stack, |ca_ctx_ref| {
+                ca_ctx_ref.verify_cert().map(|_| {
+                    // The value as passed in is a boolean that we ignore in favour of the richer error type.
+                    debug!("{:?}", ca_ctx_ref.error());
+                    debug!(
+                        "ca_ctx_ref verify cert - error depth={}, sn={:?}",
+                        ca_ctx_ref.error_depth(),
+                        ca_ctx_ref.current_cert().map(|crt| crt.subject_name())
+                    );
+                    ca_ctx_ref.error()
+                })
+            })
+            .map_err(|e| {
+                error!(?e);
+                JwtError::OpenSSLError
+            })?;
+
+        if res != x509::X509VerifyResult::OK {
+            return Err(JwtError::X5cPublicKeyDenied);
+        }
+        Ok(Some(&leaf))
     }
 
     pub(crate) fn validate(&self, validator: &JwsValidator) -> Result<JwsInner, JwtError> {
@@ -500,13 +612,24 @@ impl FromStr for JwsCompact {
         // split on the ".".
         let mut siter = s.splitn(3, '.');
 
+        println!("after siter");
+
         let hdr_str = siter.next().ok_or(JwtError::InvalidCompactFormat)?;
+
+        println!("hdr_str: {hdr_str:?}");
 
         let header: ProtectedHeader = base64::decode_config(hdr_str, base64::URL_SAFE_NO_PAD)
             .map_err(|_| JwtError::InvalidBase64)
             .and_then(|bytes| {
-                serde_json::from_slice(&bytes).map_err(|_| JwtError::InvalidHeaderFormat)
+                println!("and then");
+                serde_json::from_slice(&bytes).map_err(|err| {
+                    println!("err: {err:?}");
+                    JwtError::InvalidHeaderFormat
+                })
             })?;
+
+        println!("header: {header:?}");
+
         // Assert that from the critical field of the header, we have decoded all the needed types.
         // Remember, anything in rfc7515 can NOT be in the crit field.
         if let Some(crit) = &header.crit {
@@ -518,6 +641,8 @@ impl FromStr for JwsCompact {
         // Now we have a header, lets get the rest.
         let payload_str = siter.next().ok_or(JwtError::InvalidCompactFormat)?;
 
+        println!("{payload_str}");
+
         let sig_str = siter.next().ok_or(JwtError::InvalidCompactFormat)?;
 
         if siter.next().is_some() {
@@ -527,6 +652,8 @@ impl FromStr for JwsCompact {
 
         let payload = base64::decode_config(payload_str, base64::URL_SAFE_NO_PAD)
             .map_err(|_| JwtError::InvalidBase64)?;
+
+        println!("{payload:?}");
 
         let signature = base64::decode_config(sig_str, base64::URL_SAFE_NO_PAD)
             .map_err(|_| JwtError::InvalidBase64)?;
@@ -609,6 +736,20 @@ impl TryFrom<&Jwk> for JwsValidator {
                 Ok(JwsValidator::RS256 { pkey, digest })
             }
         }
+    }
+}
+
+#[cfg(feature = "openssl")]
+impl TryFrom<&x509::X509Ref> for JwsValidator {
+    type Error = JwtError;
+
+    fn try_from(value: &x509::X509Ref) -> Result<Self, Self::Error> {
+        let pkey = value.public_key().map_err(|_| JwtError::OpenSSLError)?;
+        let digest = hash::MessageDigest::sha256();
+        pkey.ec_key()
+            .map(|pkey| JwsValidator::ES256 { pkey, digest })
+            .or_else(|_| pkey.rsa().map(|pkey| JwsValidator::RS256 { pkey, digest }))
+            .map_err(|_| JwtError::OpenSSLError)
     }
 }
 
