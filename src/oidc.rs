@@ -1,6 +1,8 @@
 //! Oidc token implementation
 
-use crate::crypto::{JwsCompact, JwsInner, JwsSigner, JwsValidator};
+use crate::crypto::JwsCompact;
+#[cfg(feature = "openssl")]
+use crate::crypto::{JwsInner, JwsSigner, JwsValidator};
 use crate::error::JwtError;
 use crate::{btreemap_empty, vec_empty};
 use serde::{Deserialize, Serialize};
@@ -111,6 +113,7 @@ pub struct OidcToken {
     pub claims: BTreeMap<String, serde_json::value::Value>,
 }
 
+#[cfg(feature = "openssl")]
 impl OidcToken {
     fn sign_inner(&self, signer: &JwsSigner, kid: Option<&str>) -> Result<OidcSigned, JwtError> {
         // We need to convert this payload to a set of bytes.
@@ -153,6 +156,7 @@ impl OidcToken {
     */
 }
 
+#[cfg(feature = "openssl")]
 impl OidcUnverified {
     /// Using this JwsValidator, assert the correct signature of the data contained in
     /// this token. The current time is represented by seconds since the epoch. You may
@@ -170,7 +174,9 @@ impl OidcUnverified {
             Ok(tok)
         }
     }
+}
 
+impl OidcUnverified {
     /// Retrieve the Key ID used to sign this jwt, if any.
     pub fn get_jwk_kid(&self) -> Option<&str> {
         self.jwsc.get_jwk_kid()
@@ -188,6 +194,17 @@ impl OidcUnverified {
         self.jwsc.get_jwk_pubkey()
     }
     */
+
+    /// UNSAFE - release the content of this JWS without verifying it's internal structure.
+    ///
+    /// THIS MAY LEAD TO SECURITY VULNERABILITIES. YOU SHOULD BE ACUTELY AWARE OF THE RISKS WHEN
+    /// CALLING THIS FUNCTION.
+    #[cfg(feature = "unsafe_release_without_verify")]
+    pub fn unsafe_release_without_verification<V>(&self) -> Result<OidcToken, JwtError> {
+        let released = self.jwsc.release_without_verification()?;
+
+        serde_json::from_slice(released.payload()).map_err(|_| JwtError::InvalidJwt)
+    }
 }
 
 impl FromStr for OidcUnverified {
@@ -212,7 +229,7 @@ impl fmt::Display for OidcSigned {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "openssl", test))]
 mod tests {
     use super::{OidcSubject, OidcToken, OidcUnverified};
     use crate::crypto::{JwsSigner, JwsValidator};
@@ -222,6 +239,7 @@ mod tests {
 
     #[test]
     fn test_sign_and_validate() {
+        let _ = tracing_subscriber::fmt::try_init();
         let jwt = OidcToken {
             iss: Url::parse("https://oidc.example.com").unwrap(),
             sub: OidcSubject::S("a unique id".to_string()),
@@ -257,6 +275,7 @@ mod tests {
 
     #[test]
     fn test_sign_and_validate_str() {
+        let _ = tracing_subscriber::fmt::try_init();
         let jwt = OidcToken {
             iss: Url::parse("https://oidc.example.com").unwrap(),
             sub: OidcSubject::S("a unique id".to_string()),

@@ -1,11 +1,16 @@
 //! Jws Implementation
-use crate::crypto::{Jwk, JwsCompact, JwsInner, JwsSigner, JwsValidator};
+
+use crate::crypto::{Jwk, JwsCompact};
+#[cfg(feature = "openssl")]
+use crate::crypto::{JwsInner, JwsSigner, JwsValidator};
+#[cfg(feature = "openssl")]
+use url::Url;
+
 use crate::error::JwtError;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
-use url::Url;
 
 /// An unverified jws input which is ready to validate
 pub struct JwsUnverified {
@@ -57,6 +62,7 @@ where
     }
 }
 
+#[cfg(feature = "openssl")]
 impl<V> Jws<V>
 where
     V: Clone + Serialize,
@@ -92,6 +98,7 @@ where
     }
 }
 
+#[cfg(feature = "openssl")]
 impl JwsUnverified {
     /// Using this JwsValidator, assert the correct signature of the data contained in
     /// this jwt.
@@ -119,10 +126,26 @@ impl JwsUnverified {
 
         self.validate(&jwsv)
     }
+}
 
+impl JwsUnverified {
     /// Get the embedded public key used to sign this jwt, if present.
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
         self.jwsc.get_jwk_pubkey()
+    }
+
+    /// UNSAFE - release the content of this JWS without verifying it's internal structure.
+    ///
+    /// THIS MAY LEAD TO SECURITY VULNERABILITIES. YOU SHOULD BE ACUTELY AWARE OF THE RISKS WHEN
+    /// CALLING THIS FUNCTION.
+    #[cfg(feature = "unsafe_release_without_verify")]
+    pub fn unsafe_release_without_verification<V>(&self) -> Result<Jws<V>, JwtError>
+    where
+        V: Clone + DeserializeOwned,
+    {
+        let released = self.jwsc.release_without_verification()?;
+
+        serde_json::from_slice(released.payload()).map_err(|_| JwtError::InvalidJwt)
     }
 }
 
@@ -148,7 +171,7 @@ impl fmt::Display for JwsSigned {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "openssl", test))]
 mod tests {
     use super::Jws;
     use crate::crypto::{JwsSigner, JwsValidator};
@@ -162,9 +185,36 @@ mod tests {
 
     #[test]
     fn test_sign_and_validate_es256() {
+        let _ = tracing_subscriber::fmt::try_init();
         let jwss = JwsSigner::generate_es256().expect("failed to construct signer.");
         let pub_jwk = jwss.public_key_as_jwk(None).unwrap();
         let jws_validator = JwsValidator::try_from(&pub_jwk).expect("Unable to create validator");
+
+        let jwt = Jws {
+            inner: CustomExtension {
+                my_exten: "Hello".to_string(),
+            },
+        };
+
+        let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
+
+        let jwt_str = jwts.to_string();
+        trace!("{}", jwt_str);
+
+        let jwtu = jwts.invalidate();
+
+        let released = jwtu
+            .validate(&jws_validator)
+            .expect("Unable to validate jwt");
+
+        assert!(released == jwt);
+    }
+
+    #[test]
+    fn test_sign_and_validate_hs256() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let jwss = JwsSigner::generate_hs256().expect("failed to construct signer.");
+        let jws_validator = jwss.get_validator().expect("Unable to create validator");
 
         let jwt = Jws {
             inner: CustomExtension {
@@ -184,9 +234,9 @@ mod tests {
     }
 
     #[test]
-    fn test_sign_and_validate_hs256() {
-        let jwss = JwsSigner::generate_hs256().expect("failed to construct signer.");
-        let jws_validator = jwss.get_validator().expect("Unable to create validator");
+    #[cfg(feature = "unsafe_release_without_verify")]
+    fn test_unsafe_release_without_verification() {
+        use std::str::FromStr;
 
         let jwt = Jws {
             inner: CustomExtension {
@@ -194,12 +244,11 @@ mod tests {
             },
         };
 
-        let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
-
-        let jwtu = jwts.invalidate();
+        let jwtu = super::JwsUnverified::from_str("eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJteV9leHRlbiI6IkhlbGxvIn0.VNG9R9oitdzadh327cDo4Jcww7l_IGGVrsnRrKfdW-VzqNVjbrjLhyhZ6QmYT7uBBwcVxPuBKv5idyBapo_AlA")
+            .expect("Invalid jwtu");
 
         let released = jwtu
-            .validate(&jws_validator)
+            .unsafe_release_without_verification()
             .expect("Unable to validate jwt");
 
         assert!(released == jwt);

@@ -71,14 +71,16 @@
 #[macro_use]
 extern crate tracing;
 
-pub mod base64_data;
 pub mod crypto;
+
 pub mod error;
 pub mod jws;
 pub mod jwt;
 pub mod oidc;
 
-pub use crate::crypto::{JwaAlg, Jwk, JwkKeySet, JwkUse, JwsSigner, JwsValidator};
+pub use crate::crypto::{JwaAlg, Jwk, JwkKeySet, JwkUse};
+#[cfg(feature = "openssl")]
+pub use crate::crypto::{JwsSigner, JwsValidator};
 pub use crate::error::JwtError;
 pub use crate::jws::{Jws, JwsSigned, JwsUnverified};
 pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};

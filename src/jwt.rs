@@ -1,14 +1,18 @@
 //! Jwt implementation
 
 use crate::btreemap_empty;
-use crate::crypto::{Jwk, JwsCompact, JwsInner, JwsSigner, JwsValidator};
+use crate::crypto::{Jwk, JwsCompact};
+#[cfg(feature = "openssl")]
+use crate::crypto::{JwsInner, JwsSigner, JwsValidator};
+#[cfg(feature = "openssl")]
+use url::Url;
+
 use crate::error::JwtError;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
-use url::Url;
 
 /// An unverified jwt input which is ready to validate
 pub struct JwtUnverified {
@@ -112,6 +116,7 @@ where
     }
 }
 
+#[cfg(feature = "openssl")]
 impl<V> Jwt<V>
 where
     V: Clone + Serialize,
@@ -144,6 +149,7 @@ where
     }
 }
 
+#[cfg(feature = "openssl")]
 impl JwtUnverified {
     /// Using this JwsValidator, assert the correct signature of the data contained in
     /// this jwt.
@@ -155,10 +161,26 @@ impl JwtUnverified {
 
         serde_json::from_slice(released.payload()).map_err(|_| JwtError::InvalidJwt)
     }
+}
 
+impl JwtUnverified {
     /// Get the embedded public key used to sign this jwt, if present.
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
         self.jwsc.get_jwk_pubkey()
+    }
+
+    /// UNSAFE - release the content of this JWS without verifying it's internal structure.
+    ///
+    /// THIS MAY LEAD TO SECURITY VULNERABILITIES. YOU SHOULD BE ACUTELY AWARE OF THE RISKS WHEN
+    /// CALLING THIS FUNCTION.
+    #[cfg(feature = "unsafe_release_without_verify")]
+    pub fn unsafe_release_without_verification<V>(&self) -> Result<Jwt<V>, JwtError>
+    where
+        V: Clone + DeserializeOwned,
+    {
+        let released = self.jwsc.release_without_verification()?;
+
+        serde_json::from_slice(released.payload()).map_err(|_| JwtError::InvalidJwt)
     }
 }
 
@@ -184,7 +206,7 @@ impl fmt::Display for JwtSigned {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "openssl", test))]
 mod tests {
     use super::{Jwt, JwtUnverified};
     use crate::crypto::{JwsSigner, JwsValidator};
@@ -199,6 +221,7 @@ mod tests {
 
     #[test]
     fn test_sign_and_validate() {
+        let _ = tracing_subscriber::fmt::try_init();
         let jwt: Jwt<()> = Jwt {
             iss: Some("test".to_string()),
             ..Default::default()
@@ -239,6 +262,7 @@ mod tests {
 
     #[test]
     fn test_sign_and_validate_str() {
+        let _ = tracing_subscriber::fmt::try_init();
         let jwt = Jwt::<()> {
             iss: Some("test".to_string()),
             ..Default::default()

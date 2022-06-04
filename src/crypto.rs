@@ -1,16 +1,21 @@
 //! JWS Cryptographic Operations
 
+#[cfg(feature = "openssl")]
 use openssl::{bn, ec, ecdsa, hash, nid, pkey, rand, rsa, sign};
-use serde::{Deserialize, Serialize};
+#[cfg(feature = "openssl")]
 use std::convert::TryFrom;
+
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 use url::Url;
 
-use crate::base64_data::Base64UrlSafeData;
 use crate::error::JwtError;
+use base64urlsafedata::Base64UrlSafeData;
 
+#[cfg(feature = "openssl")]
 const RSA_MIN_SIZE: u32 = 3072;
+#[cfg(feature = "openssl")]
 const RSA_SIG_SIZE: i32 = 384;
 
 // https://datatracker.ietf.org/doc/html/rfc7515
@@ -97,8 +102,9 @@ pub enum JwaAlg {
     HS256,
 }
 
-#[derive(Clone)]
 /// A private key and associated information that can sign Oidc and Jwt data.
+#[derive(Clone)]
+#[cfg(feature = "openssl")]
 pub enum JwsSigner {
     /// Eliptic Curve P-256
     ES256 {
@@ -123,8 +129,9 @@ pub enum JwsSigner {
     },
 }
 
-#[derive(Clone)]
 /// A public key with associated information that can validate the signatures of Oidc and Jwt data.
+#[derive(Clone)]
+#[cfg(feature = "openssl")]
 pub enum JwsValidator {
     /// Eliptic Curve P-256
     ES256 {
@@ -149,6 +156,7 @@ pub enum JwsValidator {
     },
 }
 
+#[cfg(feature = "openssl")]
 impl fmt::Debug for JwsValidator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("JwsValidator").finish()
@@ -192,14 +200,18 @@ struct ProtectedHeader {
 pub(crate) struct JwsCompact {
     header: ProtectedHeader,
     payload: Vec<u8>,
-    sign_input: Vec<u8>,
     signature: Vec<u8>,
+    #[cfg(feature = "openssl")]
+    sign_input: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
 struct Header {
+    #[allow(dead_code)]
     kid: Option<String>,
+    #[allow(dead_code)]
     typ: Option<String>,
+    #[allow(dead_code)]
     cty: Option<String>,
 }
 
@@ -215,10 +227,12 @@ impl From<&ProtectedHeader> for Header {
 
 #[derive(Debug, Clone)]
 pub(crate) struct JwsInner {
+    #[allow(dead_code)]
     header: Header,
     payload: Vec<u8>,
 }
 
+#[cfg(feature = "openssl")]
 impl JwsInner {
     pub fn new(payload: Vec<u8>) -> Self {
         JwsInner {
@@ -246,7 +260,10 @@ impl JwsInner {
         self.header.cty = Some(cty);
         self
     }
+}
 
+#[cfg(feature = "openssl")]
+impl JwsInner {
     #[cfg(test)]
     pub fn sign_embed_public_jwk(&self, signer: &JwsSigner) -> Result<JwsCompact, JwtError> {
         let jwk = signer.public_key_as_jwk(None)?;
@@ -353,31 +370,19 @@ impl JwsInner {
             signature,
         })
     }
+}
 
+impl JwsInner {
     pub(crate) fn payload(&self) -> &[u8] {
         &self.payload
     }
 }
 
+#[cfg(feature = "openssl")]
 impl JwsCompact {
     #[cfg(test)]
     fn check_vectors(&self, chk_input: &[u8], chk_sig: &[u8]) -> bool {
         chk_input == &self.sign_input && chk_sig == &self.signature
-    }
-
-    #[allow(dead_code)]
-    pub fn get_jwk_kid(&self) -> Option<&str> {
-        self.header.kid.as_deref()
-    }
-
-    #[allow(dead_code)]
-    pub fn get_jwk_pubkey_url(&self) -> Option<&Url> {
-        self.header.jku.as_ref()
-    }
-
-    #[allow(dead_code)]
-    pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
-        self.header.jwk.as_ref()
     }
 
     pub(crate) fn validate(&self, validator: &JwsValidator) -> Result<JwsInner, JwtError> {
@@ -462,6 +467,32 @@ impl JwsCompact {
     }
 }
 
+#[cfg(feature = "unsafe_release_without_verify")]
+impl JwsCompact {
+    #[allow(dead_code)]
+    pub fn get_jwk_kid(&self) -> Option<&str> {
+        self.header.kid.as_deref()
+    }
+
+    #[allow(dead_code)]
+    pub fn get_jwk_pubkey_url(&self) -> Option<&Url> {
+        self.header.jku.as_ref()
+    }
+
+    #[allow(dead_code)]
+    pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
+        self.header.jwk.as_ref()
+    }
+
+    pub(crate) fn release_without_verification(&self) -> Result<JwsInner, JwtError> {
+        warn!("UNSAFE RELEASE OF JWT WAS PERFORMED");
+        Ok(JwsInner {
+            header: (&self.header).into(),
+            payload: self.payload.clone(),
+        })
+    }
+}
+
 impl FromStr for JwsCompact {
     type Err = JwtError;
 
@@ -500,16 +531,19 @@ impl FromStr for JwsCompact {
         let signature = base64::decode_config(sig_str, base64::URL_SAFE_NO_PAD)
             .map_err(|_| JwtError::InvalidBase64)?;
 
-        let (data_input, _) = s.rsplit_once(".").ok_or(JwtError::InvalidCompactFormat)?;
-        let sign_input = data_input.as_bytes().to_vec();
-
-        debug_assert!(data_input == &format!("{}.{}", hdr_str, payload_str));
+        #[cfg(feature = "openssl")]
+        let sign_input = {
+            let (data_input, _) = s.rsplit_once(".").ok_or(JwtError::InvalidCompactFormat)?;
+            debug_assert!(data_input == &format!("{}.{}", hdr_str, payload_str));
+            data_input.as_bytes().to_vec()
+        };
 
         Ok(JwsCompact {
             header,
             payload,
-            sign_input,
             signature,
+            #[cfg(feature = "openssl")]
+            sign_input,
         })
     }
 }
@@ -525,6 +559,7 @@ impl fmt::Display for JwsCompact {
     }
 }
 
+#[cfg(feature = "openssl")]
 impl TryFrom<&Jwk> for JwsValidator {
     type Error = JwtError;
 
@@ -577,6 +612,7 @@ impl TryFrom<&Jwk> for JwsValidator {
     }
 }
 
+#[cfg(feature = "openssl")]
 impl JwsSigner {
     #[cfg(test)]
     pub fn from_es256_jwk_components(x: &str, y: &str, d: &str) -> Result<Self, JwtError> {
@@ -801,7 +837,7 @@ impl JwsSigner {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "openssl", test))]
 mod tests {
     use super::{Jwk, JwsCompact, JwsInner, JwsSigner, JwsValidator};
     use std::convert::TryFrom;
@@ -809,7 +845,7 @@ mod tests {
 
     #[test]
     fn rfc7515_es256_validation_example() {
-        let _ = tracing_subscriber::fmt().try_init();
+        let _ = tracing_subscriber::fmt::try_init();
         let test_jws = "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS9pc19yb290Ijp0cnVlfQ.DtEhU3ljbEg8L38VWAfUAqOyKAM6-Xx-F4GawxaepmXFCgfTjDxw5djxLa8ISlSApmWQxfKTUJqPP3-Kg6NU1Q";
 
         let jwsc = JwsCompact::from_str(test_jws).unwrap();
@@ -853,7 +889,7 @@ mod tests {
 
     #[test]
     fn rfc7515_es256_signature_example() {
-        let _ = tracing_subscriber::fmt().try_init();
+        let _ = tracing_subscriber::fmt::try_init();
         // https://docs.rs/openssl/0.10.36/openssl/ec/struct.EcKey.html#method.from_private_components
         let jwss = JwsSigner::from_es256_jwk_components(
             "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
@@ -889,6 +925,7 @@ mod tests {
 
     #[test]
     fn es256_key_generate_cycle() {
+        let _ = tracing_subscriber::fmt::try_init();
         let jwss = JwsSigner::generate_es256().expect("failed to construct signer.");
 
         let der = jwss.private_key_to_der().expect("Failed to extract DER");
@@ -919,7 +956,7 @@ mod tests {
     // https://datatracker.ietf.org/doc/html/rfc7515#appendix-A.2
     #[test]
     fn rfc7515_rs256_validation_example() {
-        let _ = tracing_subscriber::fmt().try_init();
+        let _ = tracing_subscriber::fmt::try_init();
         let test_jws = "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS9pc19yb290Ijp0cnVlfQ.cC4hiUPoj9Eetdgtv3hF80EGrhuB__dzERat0XF9g2VtQgr9PJbu3XOiZj5RZmh7AAuHIm4Bh-0Qc_lF5YKt_O8W2Fp5jujGbds9uJdbF9CUAr7t1dnZcAcQjbKBYNX4BAynRFdiuB--f_nZLgrnbyTyWzO75vRK5h6xBArLIARNPvkSjtQBMHlb1L07Qe7K0GarZRmB_eSN9383LcOLn6_dO--xi12jzDwusC-eOkHWEsqtFZESc6BfI7noOPqvhJ1phCnvWh6IeYI2w9QOYEUipUTI8np6LbgGY9Fs98rqVt5AXLIhWkWywlVmtVrBp0igcN_IoypGlUPQGe77Rw";
 
         let jwsc = JwsCompact::from_str(test_jws).unwrap();
@@ -978,7 +1015,7 @@ mod tests {
 
     #[test]
     fn rs256_key_generate_cycle() {
-        let _ = tracing_subscriber::fmt().try_init();
+        let _ = tracing_subscriber::fmt::try_init();
         let jwss = JwsSigner::generate_legacy_rs256().expect("failed to construct signer.");
 
         let der = jwss.private_key_to_der().expect("Failed to extract DER");
@@ -1010,7 +1047,7 @@ mod tests {
 
     #[test]
     fn rfc7519_hs256_validation_example() {
-        let _ = tracing_subscriber::fmt().try_init();
+        let _ = tracing_subscriber::fmt::try_init();
         let test_jws = "eyJ0eXAiOiJKV1QiLA0KICJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS9pc19yb290Ijp0cnVlfQ.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
 
         let jwsc = JwsCompact::from_str(test_jws).unwrap();
