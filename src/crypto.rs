@@ -467,7 +467,6 @@ impl JwsCompact {
     }
 }
 
-#[cfg(feature = "unsafe_release_without_verify")]
 impl JwsCompact {
     #[allow(dead_code)]
     pub fn get_jwk_kid(&self) -> Option<&str> {
@@ -484,6 +483,7 @@ impl JwsCompact {
         self.header.jwk.as_ref()
     }
 
+    #[cfg(feature = "unsafe_release_without_verify")]
     pub(crate) fn release_without_verification(&self) -> Result<JwsInner, JwtError> {
         warn!("UNSAFE RELEASE OF JWT WAS PERFORMED");
         Ok(JwsInner {
