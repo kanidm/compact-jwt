@@ -8,7 +8,6 @@ use crate::crypto::{JwsInner, JwsSigner, JwsValidator};
 use url::Url;
 
 use crate::error::JwtError;
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -155,7 +154,7 @@ impl JwtUnverified {
     /// this jwt.
     pub fn validate<V>(&self, validator: &JwsValidator) -> Result<Jwt<V>, JwtError>
     where
-        V: Clone + DeserializeOwned,
+        V: Clone + serde::de::DeserializeOwned,
     {
         let released = self.jwsc.validate(validator)?;
 
@@ -176,7 +175,7 @@ impl JwtUnverified {
     #[cfg(feature = "unsafe_release_without_verify")]
     pub fn unsafe_release_without_verification<V>(&self) -> Result<Jwt<V>, JwtError>
     where
-        V: Clone + DeserializeOwned,
+        V: Clone + serde::de::DeserializeOwned,
     {
         let released = self.jwsc.release_without_verification()?;
 

@@ -1,6 +1,7 @@
 //! Error types.
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
 /// An error in the JWT library
@@ -29,6 +30,16 @@ pub enum JwtError {
     EmbededJwkNotAvailable,
     /// Jwk public key export denied
     JwkPublicKeyDenied,
+    /// X5c public key's cert chain didn't validate
+    X5cPublicKeyDenied,
     /// Private key export denied
     PrivateKeyDenied,
 }
+
+impl fmt::Display for JwtError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for JwtError {}
