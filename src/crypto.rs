@@ -1,7 +1,7 @@
 //! JWS Cryptographic Operations
 
 #[cfg(feature = "openssl")]
-use openssl::{bn, ec, ecdsa, hash, nid, pkey, rand, rsa, sign, stack, x509};
+use openssl::{bn, ec, ecdsa, hash, nid, pkey, rand, rsa, sign, x509};
 #[cfg(feature = "openssl")]
 use std::convert::TryFrom;
 
@@ -163,60 +163,6 @@ impl fmt::Debug for JwsValidator {
     }
 }
 
-/*
-#[cfg(feature = "openssl")]
-mod x509_serde {
-    use openssl::x509;
-    use serde::de::{self, Deserialize, Visitor};
-    use serde::ser::{self, Serialize};
-    use std::fmt;
-
-    #[derive(Clone, Debug)]
-    pub(super) struct X509(pub x509::X509);
-
-    impl Serialize for X509 {
-        fn serialize<S>(self: &X509, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer,
-        {
-            let der = self.0.to_der().map_err(ser::Error::custom)?;
-            serializer.serialize_bytes(&der)
-        }
-    }
-
-    struct X509Visitor;
-
-    impl Visitor<'_> for X509Visitor {
-        type Value = X509;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("der-encoded bytes for an x509 certificate")
-        }
-
-        fn visit_bytes<E>(self, value: &[u8]) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            println!("before [from_der]");
-            println!("bytes: {value:?}");
-            let der_bytes = base64::decode(value).map_err(E::custom)?;
-            let x509 = x509::X509::from_der(&der_bytes).map_err(E::custom)?;
-            println!("after [from_der]");
-            Ok(X509(x509))
-        }
-    }
-
-    impl<'de> Deserialize<'de> for X509 {
-        fn deserialize<D>(deserializer: D) -> Result<X509, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-        {
-            deserializer.deserialize_bytes(X509Visitor)
-        }
-    }
-}
-*/
-
 #[derive(Debug, Serialize, Clone, Deserialize)]
 struct ProtectedHeader {
     alg: JwaAlg,
@@ -234,12 +180,10 @@ struct ProtectedHeader {
     #[serde(skip_serializing_if = "Option::is_none")]
     cty: Option<String>,
 
-    // We probably don't need these.
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
     x5u: Option<()>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    x5c: Option<Vec<u8>>,
-    // x5c: Option<Vec<x509_serde::X509>>,
+    x5c: Option<Vec<String>>,
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
     x5t: Option<()>,
     #[serde(
@@ -442,59 +386,45 @@ impl JwsCompact {
         chk_input == &self.sign_input && chk_sig == &self.signature
     }
 
-    /// return [Ok(None)] if the jws object's header's x5c field isn't populated
-    #[allow(dead_code)]
-    pub fn get_x5c_pubkey(&self) -> Result<Option<&x509::X509Ref>, JwtError> {
+    pub fn get_x5c_pubkey(&self) -> Result<Option<x509::X509>, JwtError> {
         let fullchain = match &self.header.x5c {
             Some(chain) => chain,
             None => return Ok(None),
         };
 
-        let (leaf, chain) = fullchain
-            .split_first()
-            .ok_or(JwtError::InvalidHeaderFormat)?;
-
-        let leaf = &leaf.0;
-
-        // Convert the chain to a stackref so that openssl can use it.
-        let mut chain_stack = stack::Stack::new().map_err(|_| JwtError::OpenSSLError)?;
-
-        for crt in chain.iter() {
-            chain_stack
-                .push(crt.0.clone())
-                .map_err(|_| JwtError::OpenSSLError)?;
-        }
-
-        // Create the x509 store that we will validate against.
-        let ca_store = x509::store::X509StoreBuilder::new()
-            .map_err(|_| JwtError::OpenSSLError)?
-            .build();
-
-        let mut ca_ctx = x509::X509StoreContext::new().map_err(|_| JwtError::OpenSSLError)?;
-
-        // Providing the cert and chain, validate we have a ref to our store.
-        let res = ca_ctx
-            .init(&ca_store, &leaf, &chain_stack, |ca_ctx_ref| {
-                ca_ctx_ref.verify_cert().map(|_| {
-                    // The value as passed in is a boolean that we ignore in favour of the richer error type.
-                    debug!("{:?}", ca_ctx_ref.error());
-                    debug!(
-                        "ca_ctx_ref verify cert - error depth={}, sn={:?}",
-                        ca_ctx_ref.error_depth(),
-                        ca_ctx_ref.current_cert().map(|crt| crt.subject_name())
-                    );
-                    ca_ctx_ref.error()
-                })
+        fullchain
+            .get(0)
+            .map(|value| {
+                base64::decode(value)
+                    .map_err(|_| JwtError::InvalidBase64)
+                    .and_then(|bytes| {
+                        x509::X509::from_der(&bytes).map_err(|_| JwtError::OpenSSLError)
+                    })
             })
-            .map_err(|e| {
-                error!(?e);
-                JwtError::OpenSSLError
-            })?;
+            .transpose()
+    }
 
-        if res != x509::X509VerifyResult::OK {
-            return Err(JwtError::X5cPublicKeyDenied);
-        }
-        Ok(Some(&leaf))
+    /// return [Ok(None)] if the jws object's header's x5c field isn't populated
+    pub fn get_x5c_chain(&self) -> Result<Option<Vec<x509::X509>>, JwtError> {
+        let fullchain = match &self.header.x5c {
+            Some(chain) => chain,
+            None => return Ok(None),
+        };
+
+        let fullchain: Result<Vec<_>, _> = fullchain
+            .iter()
+            .map(|value| {
+                base64::decode(value)
+                    .map_err(|_| JwtError::InvalidBase64)
+                    .and_then(|bytes| {
+                        x509::X509::from_der(&bytes).map_err(|_| JwtError::OpenSSLError)
+                    })
+            })
+            .collect();
+
+        let fullchain = fullchain?;
+
+        Ok(Some(fullchain))
     }
 
     pub(crate) fn validate(&self, validator: &JwsValidator) -> Result<JwsInner, JwtError> {
@@ -740,10 +670,10 @@ impl TryFrom<&Jwk> for JwsValidator {
 }
 
 #[cfg(feature = "openssl")]
-impl TryFrom<&x509::X509Ref> for JwsValidator {
+impl TryFrom<x509::X509> for JwsValidator {
     type Error = JwtError;
 
-    fn try_from(value: &x509::X509Ref) -> Result<Self, Self::Error> {
+    fn try_from(value: x509::X509) -> Result<Self, Self::Error> {
         let pkey = value.public_key().map_err(|_| JwtError::OpenSSLError)?;
         let digest = hash::MessageDigest::sha256();
         pkey.ec_key()
