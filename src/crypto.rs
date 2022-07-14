@@ -355,7 +355,7 @@ impl JwsInner {
             }
             JwsSigner::HS256 { skey, digest } => {
                 let mut signer =
-                    sign::Signer::new(*digest, &skey).map_err(|_| JwtError::OpenSSLError)?;
+                    sign::Signer::new(*digest, skey).map_err(|_| JwtError::OpenSSLError)?;
 
                 signer
                     .sign_oneshot_to_vec(&sign_input)
@@ -489,7 +489,7 @@ impl JwsCompact {
             }
             (JwsValidator::HS256 { skey, digest }, JwaAlg::HS256) => {
                 let mut signer =
-                    sign::Signer::new(*digest, &skey).map_err(|_| JwtError::OpenSSLError)?;
+                    sign::Signer::new(*digest, skey).map_err(|_| JwtError::OpenSSLError)?;
 
                 let ver_sig = signer
                     .sign_oneshot_to_vec(&self.sign_input)
@@ -542,23 +542,13 @@ impl FromStr for JwsCompact {
         // split on the ".".
         let mut siter = s.splitn(3, '.');
 
-        println!("after siter");
-
         let hdr_str = siter.next().ok_or(JwtError::InvalidCompactFormat)?;
-
-        println!("hdr_str: {hdr_str:?}");
 
         let header: ProtectedHeader = base64::decode_config(hdr_str, base64::URL_SAFE_NO_PAD)
             .map_err(|_| JwtError::InvalidBase64)
             .and_then(|bytes| {
-                println!("and then");
-                serde_json::from_slice(&bytes).map_err(|err| {
-                    println!("err: {err:?}");
-                    JwtError::InvalidHeaderFormat
-                })
+                serde_json::from_slice(&bytes).map_err(|_| JwtError::InvalidHeaderFormat)
             })?;
-
-        println!("header: {header:?}");
 
         // Assert that from the critical field of the header, we have decoded all the needed types.
         // Remember, anything in rfc7515 can NOT be in the crit field.
@@ -571,8 +561,6 @@ impl FromStr for JwsCompact {
         // Now we have a header, lets get the rest.
         let payload_str = siter.next().ok_or(JwtError::InvalidCompactFormat)?;
 
-        println!("{payload_str}");
-
         let sig_str = siter.next().ok_or(JwtError::InvalidCompactFormat)?;
 
         if siter.next().is_some() {
@@ -582,8 +570,6 @@ impl FromStr for JwsCompact {
 
         let payload = base64::decode_config(payload_str, base64::URL_SAFE_NO_PAD)
             .map_err(|_| JwtError::InvalidBase64)?;
-
-        println!("{payload:?}");
 
         let signature = base64::decode_config(sig_str, base64::URL_SAFE_NO_PAD)
             .map_err(|_| JwtError::InvalidBase64)?;
