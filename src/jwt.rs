@@ -130,7 +130,9 @@ where
         // eprintln!("{:?}", serde_json::to_string(&self));
         let payload = serde_json::to_vec(&self).map_err(|_| JwtError::InvalidJwt)?;
 
-        let jws = JwsInner::new(payload).set_typ("JWT".to_string());
+        let jws = JwsInner::new(payload)
+            .set_kid(signer.get_kid().to_string())
+            .set_typ("JWT".to_string());
 
         jws.sign_inner(signer, jku, jwk)
             .map(|jwsc| JwtSigned { jwsc })
@@ -143,7 +145,7 @@ where
 
     /// Use this to create a signed jwt that includes the public key used in the signing process
     pub fn sign_embed_public_jwk(&self, signer: &JwsSigner) -> Result<JwtSigned, JwtError> {
-        let jwk = signer.public_key_as_jwk(None)?;
+        let jwk = signer.public_key_as_jwk()?;
         self.sign_inner(signer, None, Some(jwk))
     }
 }
@@ -227,7 +229,7 @@ mod tests {
         };
 
         let jwss = JwsSigner::generate_es256().expect("failed to construct signer.");
-        let pub_jwk = jwss.public_key_as_jwk(None).unwrap();
+        let pub_jwk = jwss.public_key_as_jwk().unwrap();
         let jws_validator = JwsValidator::try_from(&pub_jwk).expect("Unable to create validator");
 
         let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
@@ -268,7 +270,7 @@ mod tests {
         };
 
         let jwss = JwsSigner::generate_es256().expect("failed to construct signer.");
-        let pub_jwk = jwss.public_key_as_jwk(None).unwrap();
+        let pub_jwk = jwss.public_key_as_jwk().unwrap();
         let jws_validator = JwsValidator::try_from(&pub_jwk).expect("Unable to create validator");
 
         let jwts = jwt.sign(&jwss).expect("failed to sign jwt");

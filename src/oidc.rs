@@ -123,7 +123,9 @@ impl OidcToken {
         );
         let payload = serde_json::to_vec(&self).map_err(|_| JwtError::InvalidJwt)?;
 
-        let jws = JwsInner::new(payload).set_typ("JWT".to_string());
+        let jws = JwsInner::new(payload)
+            .set_kid(signer.get_kid().to_string())
+            .set_typ("JWT".to_string());
 
         let jws = if let Some(k) = kid {
             jws.set_kid(k.to_string())
@@ -259,7 +261,7 @@ mod tests {
         };
 
         let jwss = JwsSigner::generate_es256().expect("failed to construct signer.");
-        let pub_jwk = jwss.public_key_as_jwk(None).unwrap();
+        let pub_jwk = jwss.public_key_as_jwk().unwrap();
         let jws_validator = JwsValidator::try_from(&pub_jwk).expect("Unable to create validator");
 
         let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
@@ -295,7 +297,7 @@ mod tests {
         };
 
         let jwss = JwsSigner::generate_es256().expect("failed to construct signer.");
-        let pub_jwk = jwss.public_key_as_jwk(None).unwrap();
+        let pub_jwk = jwss.public_key_as_jwk().unwrap();
         let jws_validator = JwsValidator::try_from(&pub_jwk).expect("Unable to create validator");
 
         let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
