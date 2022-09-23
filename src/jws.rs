@@ -128,7 +128,12 @@ where
         let jwk = signer.public_key_as_jwk()?;
         self.sign_inner(signer, None, Some(jwk))
     }
+}
 
+impl<V> Jws<V>
+where
+    V: Clone + Serialize,
+{
     /// Move the inner value out of this jws.
     pub fn into_inner(self) -> V {
         self.inner
