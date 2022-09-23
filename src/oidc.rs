@@ -142,11 +142,13 @@ impl OidcToken {
         self.sign_inner(signer, None)
     }
 
+    /*
     /// set the key id (kid) into the header.
     /// use set_kid on jws.
     pub fn sign_with_kid(&self, signer: &JwsSigner, kid: &str) -> Result<OidcSigned, JwtError> {
         self.sign_inner(signer, Some(kid))
     }
+    */
 
     /*
     /// Use this private signer to created a signed oidc token, which contains the public

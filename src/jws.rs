@@ -32,7 +32,7 @@ where
 {
     /// These are the fields that this JWT will contain.
     #[serde(flatten)]
-    pub inner: V,
+    inner: V,
 }
 
 impl<V> Default for Jws<V>
@@ -43,6 +43,34 @@ where
         Jws {
             inner: V::default(),
         }
+    }
+}
+
+impl<V> Jws<V>
+where
+    V: Clone,
+{
+    /// Construct a new Jws containing an inner struct
+    pub fn new(inner: V) -> Self {
+        Jws { inner: inner }
+    }
+}
+
+impl<V> AsRef<V> for Jws<V>
+where
+    V: Clone,
+{
+    fn as_ref(&self) -> &V {
+        &self.inner
+    }
+}
+
+impl<V> AsMut<V> for Jws<V>
+where
+    V: Clone,
+{
+    fn as_mut(&mut self) -> &mut V {
+        &mut self.inner
     }
 }
 
@@ -78,7 +106,7 @@ where
         // We need to convert this payload to a set of bytes.
         // eprintln!("{:?}", serde_json::to_string(&self));
         let payload = serde_json::to_vec(&self).map_err(|e| {
-            error!(?e);
+            debug!(?e, "Invalid Jwt - Serde Error");
             JwtError::InvalidJwt
         })?;
 
@@ -118,7 +146,7 @@ impl JwsUnverified {
         let released = self.jwsc.validate(validator)?;
 
         serde_json::from_slice(released.payload()).map_err(|e| {
-            error!(?e, "Invalid Jwt - Serde Error");
+            debug!(?e, "Invalid Jwt - Serde Error");
             JwtError::InvalidJwt
         })
     }
@@ -133,9 +161,15 @@ impl JwsUnverified {
         let pub_jwk = self.get_jwk_pubkey();
         let pub_x5c = self.get_x5c_pubkey();
         let jwsv = match (pub_jwk, pub_x5c) {
-            (None, Ok(None)) => Err(JwtError::EmbededJwkNotAvailable),
+            (None, Ok(None)) => {
+                debug!("embeded jwk not available");
+                Err(JwtError::EmbededJwkNotAvailable)
+            }
             // fix this error
-            (Some(_), Ok(Some(_)) | Err(_)) => Err(JwtError::PrivateKeyDenied),
+            (Some(_), Ok(Some(_)) | Err(_)) => {
+                debug!("private key denied - multiple trust chains available");
+                Err(JwtError::PrivateKeyDenied)
+            }
             (None, Err(err)) => Err(err),
             (Some(jwk), Ok(None)) => jwk.try_into(),
             (None, Ok(Some(x5c))) => x5c.try_into(),
@@ -159,6 +193,11 @@ impl JwsUnverified {
     /// Get the embedded public key used to sign this jwt, if present.
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
         self.jwsc.get_jwk_pubkey()
+    }
+
+    /// Get the KID used to sign this Jws if present
+    pub fn get_jwk_kid(&self) -> Option<&str> {
+        self.jwsc.get_jwk_kid()
     }
 
     /// UNSAFE - release the content of this JWS without verifying it's internal structure.
@@ -290,6 +329,23 @@ mod tests {
         let certs = jwsu.get_x5c_chain().expect("Invalid x5c chain");
 
         assert!(certs.unwrap().len() == 3);
+
+        let _claims: std::collections::BTreeMap<String, serde_json::value::Value> = jwsu
+            .validate_embeded()
+            .expect("Failed to verify")
+            .into_inner();
+    }
+
+    #[test]
+    fn test_verification_jws_embedded() {
+        use std::str::FromStr;
+
+        let _ = tracing_subscriber::fmt::try_init();
+
+        let jwsu = super::JwsUnverified::from_str(
+  "eyJhbGciOiJFUzI1NiIsImp3ayI6eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6IjhyaFRhVElJMHRzY1MyX2QtWUNYRm92RGpRUkxEUTEzbWhHV3d5UTBibWMiLCJ5IjoiYmoyakNkSXkxU3lpcHBkU2lEWmxHZEhMUTR0TG40NjMzTFk2dUJHUWU1NCIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIn0sInR5cCI6IkpXVCJ9.eyJzZXNzaW9uX2lkIjoiYTNkYjczYTctNzc3Zi00NzI2LTliZGUtNjBkMjEwOTJlNTFmIiwiYXV0aF90eXBlIjoiZ2VuZXJhdGVkcGFzc3dvcmQiLCJleHBpcnkiOlsyMDIyLDI2MCwyMTk5OCw2NTc4MDM0NjhdLCJ1dWlkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAwIiwiZGlzcGxheW5hbWUiOiJTeXN0ZW0gQWRtaW5pc3RyYXRvciIsInNwbiI6ImFkbWluQGlkbS5jb3JlZm9ybS5jb20iLCJtYWlsX3ByaW1hcnkiOm51bGwsImxpbV91aWR4IjpmYWxzZSwibGltX3JtYXgiOjEyOCwibGltX3BtYXgiOjI1NiwibGltX2ZtYXgiOjMyfQ.Y9CeMWwGX4xS4O2Yy9vlTjW-6dL_Ncoo-nWd2344O_SwWdBneDpUE35aA_kuLRg1ssVceyVvCDhlxYOyXwzAjQ"
+        )
+            .expect("Invalid jwsu");
 
         let _claims: std::collections::BTreeMap<String, serde_json::value::Value> = jwsu
             .validate_embeded()

@@ -90,7 +90,7 @@ pub enum JwkUse {
     Enc,
 }
 
-#[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Copy, Clone, Deserialize, PartialEq)]
 #[allow(non_camel_case_types)]
 /// Cryptographic algorithm
 pub enum JwaAlg {
@@ -135,12 +135,68 @@ pub enum JwsSigner {
     },
 }
 
+#[cfg(feature = "openssl")]
+impl std::cmp::PartialEq for JwsSigner {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (JwsSigner::ES256 { kid: kid_a, .. }, JwsSigner::ES256 { kid: kid_b, .. }) => {
+                kid_a.eq(kid_b)
+            }
+            (JwsSigner::RS256 { kid: kid_a, .. }, JwsSigner::RS256 { kid: kid_b, .. }) => {
+                kid_a.eq(kid_b)
+            }
+            (JwsSigner::HS256 { kid: kid_a, .. }, JwsSigner::HS256 { kid: kid_b, .. }) => {
+                kid_a.eq(kid_b)
+            }
+            _ => false,
+        }
+    }
+}
+
+#[cfg(feature = "openssl")]
+impl std::cmp::Eq for JwsSigner {}
+
+#[cfg(feature = "openssl")]
+impl std::hash::Hash for JwsSigner {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            JwsSigner::ES256 { kid, .. }
+            | JwsSigner::RS256 { kid, .. }
+            | JwsSigner::HS256 { kid, .. } => {
+                kid.hash(state);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "openssl")]
+impl fmt::Debug for JwsSigner {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            JwsSigner::ES256 { kid, .. } => f
+                .debug_struct("JwsSigner::ES256")
+                .field("kid", kid)
+                .finish(),
+            JwsSigner::RS256 { kid, .. } => f
+                .debug_struct("JwsSigner::RS256")
+                .field("kid", kid)
+                .finish(),
+            JwsSigner::HS256 { kid, .. } => f
+                .debug_struct("JwsSigner::HS256")
+                .field("kid", kid)
+                .finish(),
+        }
+    }
+}
+
 /// A public key with associated information that can validate the signatures of Oidc and Jwt data.
 #[derive(Clone)]
 #[cfg(feature = "openssl")]
 pub enum JwsValidator {
     /// Eliptic Curve P-256
     ES256 {
+        /// The KID of this validator
+        kid: Option<String>,
         /// Public Key
         pkey: ec::EcKey<pkey::Public>,
         /// The matching digest.
@@ -148,6 +204,8 @@ pub enum JwsValidator {
     },
     /// RSASSA-PKCS1-v1_5 with SHA-256
     RS256 {
+        /// The KID of this validator
+        kid: Option<String>,
         /// Public Key
         pkey: rsa::Rsa<pkey::Public>,
         /// The matching digest.
@@ -155,6 +213,8 @@ pub enum JwsValidator {
     },
     /// HMAC SHA256
     HS256 {
+        /// The KID of this validator
+        kid: Option<String>,
         /// Private Key (Yes, this is correct)
         skey: pkey::PKey<pkey::Private>,
         /// The matching digest.
@@ -166,6 +226,17 @@ pub enum JwsValidator {
 impl fmt::Debug for JwsValidator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("JwsValidator").finish()
+    }
+}
+
+impl JwsValidator {
+    /// Get the KID of this validator if present
+    pub fn get_jwk_kid(&self) -> Option<&str> {
+        match self {
+            JwsValidator::ES256 { kid, .. } => kid.as_deref(),
+            JwsValidator::RS256 { kid, .. } => kid.as_deref(),
+            JwsValidator::HS256 { kid, .. } => kid.as_deref(),
+        }
     }
 }
 
@@ -319,7 +390,10 @@ impl JwsInner {
         let payload = self.payload.clone();
 
         let hdr_b64 = serde_json::to_vec(&header)
-            .map_err(|_| JwtError::InvalidHeaderFormat)
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::InvalidHeaderFormat
+            })
             .map(|bytes| base64::encode_config(&bytes, base64::URL_SAFE_NO_PAD))?;
         let payload_b64 = base64::encode_config(&self.payload, base64::URL_SAFE_NO_PAD);
 
@@ -336,10 +410,14 @@ impl JwsInner {
                 skey,
                 digest,
             } => {
-                let hashout =
-                    hash::hash(*digest, &sign_input).map_err(|_| JwtError::OpenSSLError)?;
-                let ec_sig =
-                    ecdsa::EcdsaSig::sign(&hashout, skey).map_err(|_| JwtError::OpenSSLError)?;
+                let hashout = hash::hash(*digest, &sign_input).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
+                let ec_sig = ecdsa::EcdsaSig::sign(&hashout, skey).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
                 let mut r = [0; 32];
                 let r_vec = ec_sig.r().to_vec();
@@ -363,30 +441,40 @@ impl JwsInner {
                 skey,
                 digest,
             } => {
-                let key = pkey::PKey::from_rsa(skey.clone()).map_err(|_| JwtError::OpenSSLError)?;
+                let key = pkey::PKey::from_rsa(skey.clone()).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-                let mut signer =
-                    sign::Signer::new(*digest, &key).map_err(|_| JwtError::OpenSSLError)?;
+                let mut signer = sign::Signer::new(*digest, &key).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-                signer
-                    .set_rsa_padding(rsa::Padding::PKCS1)
-                    .map_err(|_| JwtError::OpenSSLError)?;
+                signer.set_rsa_padding(rsa::Padding::PKCS1).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-                signer
-                    .sign_oneshot_to_vec(&sign_input)
-                    .map_err(|_| JwtError::OpenSSLError)?
+                signer.sign_oneshot_to_vec(&sign_input).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?
             }
             JwsSigner::HS256 {
                 kid: _,
                 skey,
                 digest,
             } => {
-                let mut signer =
-                    sign::Signer::new(*digest, skey).map_err(|_| JwtError::OpenSSLError)?;
+                let mut signer = sign::Signer::new(*digest, skey).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-                signer
-                    .sign_oneshot_to_vec(&sign_input)
-                    .map_err(|_| JwtError::OpenSSLError)?
+                signer.sign_oneshot_to_vec(&sign_input).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?
             }
         };
 
@@ -425,7 +513,10 @@ impl JwsCompact {
                 base64::decode(value)
                     .map_err(|_| JwtError::InvalidBase64)
                     .and_then(|bytes| {
-                        x509::X509::from_der(&bytes).map_err(|_| JwtError::OpenSSLError)
+                        x509::X509::from_der(&bytes).map_err(|e| {
+                            debug!(?e);
+                            JwtError::OpenSSLError
+                        })
                     })
             })
             .transpose()
@@ -444,7 +535,10 @@ impl JwsCompact {
                 base64::decode(value)
                     .map_err(|_| JwtError::InvalidBase64)
                     .and_then(|bytes| {
-                        x509::X509::from_der(&bytes).map_err(|_| JwtError::OpenSSLError)
+                        x509::X509::from_der(&bytes).map_err(|e| {
+                            debug!(?e);
+                            JwtError::OpenSSLError
+                        })
                     })
             })
             .collect();
@@ -456,53 +550,87 @@ impl JwsCompact {
 
     pub(crate) fn validate(&self, validator: &JwsValidator) -> Result<JwsInner, JwtError> {
         match (validator, &self.header.alg) {
-            (JwsValidator::ES256 { pkey, digest }, JwaAlg::ES256) => {
+            (
+                JwsValidator::ES256 {
+                    kid: _,
+                    pkey,
+                    digest,
+                },
+                JwaAlg::ES256,
+            ) => {
                 if self.signature.len() != 64 {
                     return Err(JwtError::InvalidSignature);
                 }
 
-                let r = bn::BigNum::from_slice(&self.signature[..32])
-                    .map_err(|_| JwtError::OpenSSLError)?;
-                let s = bn::BigNum::from_slice(&self.signature[32..64])
-                    .map_err(|_| JwtError::OpenSSLError)?;
+                let r = bn::BigNum::from_slice(&self.signature[..32]).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
+                let s = bn::BigNum::from_slice(&self.signature[32..64]).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-                let sig = ecdsa::EcdsaSig::from_private_components(r, s)
-                    .map_err(|_| JwtError::OpenSSLError)?;
+                let sig = ecdsa::EcdsaSig::from_private_components(r, s).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-                let hashout =
-                    hash::hash(*digest, &self.sign_input).map_err(|_| JwtError::OpenSSLError)?;
+                let hashout = hash::hash(*digest, &self.sign_input).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-                if sig
-                    .verify(&hashout, pkey)
-                    .map_err(|_| JwtError::OpenSSLError)?
-                {
+                if sig.verify(&hashout, pkey).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })? {
                     Ok(JwsInner {
                         header: (&self.header).into(),
                         payload: self.payload.clone(),
                     })
                 } else {
+                    debug!("invalid signature");
                     Err(JwtError::InvalidSignature)
                 }
             }
-            (JwsValidator::RS256 { pkey, digest }, JwaAlg::RS256) => {
+            (
+                JwsValidator::RS256 {
+                    kid: _,
+                    pkey,
+                    digest,
+                },
+                JwaAlg::RS256,
+            ) => {
                 if self.signature.len() < 256 {
+                    debug!("invalid signature length");
                     return Err(JwtError::InvalidSignature);
                 }
 
-                let p = pkey::PKey::from_rsa(pkey.clone()).map_err(|_| JwtError::OpenSSLError)?;
+                let p = pkey::PKey::from_rsa(pkey.clone()).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-                let mut verifier =
-                    sign::Verifier::new(*digest, &p).map_err(|_| JwtError::OpenSSLError)?;
-                verifier
-                    .set_rsa_padding(rsa::Padding::PKCS1)
-                    .map_err(|_| JwtError::OpenSSLError)?;
+                let mut verifier = sign::Verifier::new(*digest, &p).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
+                verifier.set_rsa_padding(rsa::Padding::PKCS1).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-                verifier
-                    .update(&self.sign_input)
-                    .map_err(|_| JwtError::OpenSSLError)?;
+                verifier.update(&self.sign_input).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
                 verifier
                     .verify(&self.signature)
-                    .map_err(|_| JwtError::OpenSSLError)
+                    .map_err(|e| {
+                        debug!(?e);
+                        JwtError::OpenSSLError
+                    })
                     .and_then(|res| {
                         if res {
                             Ok(JwsInner {
@@ -510,17 +638,28 @@ impl JwsCompact {
                                 payload: self.payload.clone(),
                             })
                         } else {
+                            debug!("invalid signature");
                             Err(JwtError::InvalidSignature)
                         }
                     })
             }
-            (JwsValidator::HS256 { skey, digest }, JwaAlg::HS256) => {
-                let mut signer =
-                    sign::Signer::new(*digest, skey).map_err(|_| JwtError::OpenSSLError)?;
+            (
+                JwsValidator::HS256 {
+                    kid: _,
+                    skey,
+                    digest,
+                },
+                JwaAlg::HS256,
+            ) => {
+                let mut signer = sign::Signer::new(*digest, skey).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-                let ver_sig = signer
-                    .sign_oneshot_to_vec(&self.sign_input)
-                    .map_err(|_| JwtError::OpenSSLError)?;
+                let ver_sig = signer.sign_oneshot_to_vec(&self.sign_input).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
                 if self.signature == ver_sig {
                     Ok(JwsInner {
@@ -528,16 +667,19 @@ impl JwsCompact {
                         payload: self.payload.clone(),
                     })
                 } else {
+                    debug!("invalid signature");
                     Err(JwtError::InvalidSignature)
                 }
             }
-            _ => Err(JwtError::ValidatorAlgMismatch),
+            alg_request => {
+                debug!(?alg_request, "validator algorithm mismatch");
+                Err(JwtError::ValidatorAlgMismatch)
+            }
         }
     }
 }
 
 impl JwsCompact {
-    #[allow(dead_code)]
     pub fn get_jwk_kid(&self) -> Option<&str> {
         self.header.kid.as_deref()
     }
@@ -569,41 +711,63 @@ impl FromStr for JwsCompact {
         // split on the ".".
         let mut siter = s.splitn(3, '.');
 
-        let hdr_str = siter.next().ok_or(JwtError::InvalidCompactFormat)?;
+        let hdr_str = siter.next().ok_or_else(|| {
+            debug!("invalid compact format - protected header not present");
+            JwtError::InvalidCompactFormat
+        })?;
 
         let header: ProtectedHeader = base64::decode_config(hdr_str, base64::URL_SAFE_NO_PAD)
             .map_err(|_| JwtError::InvalidBase64)
             .and_then(|bytes| {
-                serde_json::from_slice(&bytes).map_err(|_| JwtError::InvalidHeaderFormat)
+                serde_json::from_slice(&bytes).map_err(|e| {
+                    debug!(?e, "invalid header format - invalid json");
+                    JwtError::InvalidHeaderFormat
+                })
             })?;
 
         // Assert that from the critical field of the header, we have decoded all the needed types.
         // Remember, anything in rfc7515 can NOT be in the crit field.
         if let Some(crit) = &header.crit {
             if !crit.is_empty() {
+                error!("critical extension - unable to process critical extensions");
                 return Err(JwtError::CriticalExtension);
             }
         }
 
         // Now we have a header, lets get the rest.
-        let payload_str = siter.next().ok_or(JwtError::InvalidCompactFormat)?;
+        let payload_str = siter.next().ok_or_else(|| {
+            debug!("invalid compact format - payload not present");
+            JwtError::InvalidCompactFormat
+        })?;
 
-        let sig_str = siter.next().ok_or(JwtError::InvalidCompactFormat)?;
+        let sig_str = siter.next().ok_or_else(|| {
+            debug!("invalid compact format - signature not present");
+            JwtError::InvalidCompactFormat
+        })?;
 
         if siter.next().is_some() {
             // Too much data.
+            debug!("invalid compact format - extra fields present");
             return Err(JwtError::InvalidCompactFormat);
         }
 
-        let payload = base64::decode_config(payload_str, base64::URL_SAFE_NO_PAD)
-            .map_err(|_| JwtError::InvalidBase64)?;
+        let payload =
+            base64::decode_config(payload_str, base64::URL_SAFE_NO_PAD).map_err(|_| {
+                debug!("invalid base64");
+                JwtError::InvalidBase64
+            })?;
 
-        let signature = base64::decode_config(sig_str, base64::URL_SAFE_NO_PAD)
-            .map_err(|_| JwtError::InvalidBase64)?;
+        let signature = base64::decode_config(sig_str, base64::URL_SAFE_NO_PAD).map_err(|_| {
+            debug!("invalid base64");
+            JwtError::InvalidBase64
+        })?;
 
         #[cfg(feature = "openssl")]
         let sign_input = {
-            let (data_input, _) = s.rsplit_once(".").ok_or(JwtError::InvalidCompactFormat)?;
+            let (data_input, _) = s.rsplit_once(".").ok_or_else(|| {
+                debug!("invalid compact format - unable to parse sign input");
+                JwtError::InvalidCompactFormat
+            })?;
             debug_assert!(data_input == &format!("{}.{}", hdr_str, payload_str));
             data_input.as_bytes().to_vec()
         };
@@ -621,7 +785,10 @@ impl FromStr for JwsCompact {
 impl fmt::Display for JwsCompact {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let hdr = serde_json::to_vec(&self.header)
-            .map_err(|_| fmt::Error)
+            .map_err(|e| {
+                debug!(?e, "unable to serialise to json");
+                fmt::Error
+            })
             .map(|bytes| base64::encode_config(&bytes, base64::URL_SAFE_NO_PAD))?;
         let payload = base64::encode_config(&self.payload, base64::URL_SAFE_NO_PAD);
         let sig = base64::encode_config(&self.signature, base64::URL_SAFE_NO_PAD);
@@ -641,24 +808,40 @@ impl TryFrom<&Jwk> for JwsValidator {
                 y,
                 alg: _,
                 use_: _,
-                kid: _,
+                kid,
             } => {
                 let (curve, digest) = match crv {
                     EcCurve::P256 => (nid::Nid::X9_62_PRIME256V1, hash::MessageDigest::sha256()),
                 };
-                let ec_group =
-                    ec::EcGroup::from_curve_name(curve).map_err(|_| JwtError::OpenSSLError)?;
+                let ec_group = ec::EcGroup::from_curve_name(curve).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-                let xbn = bn::BigNum::from_slice(&x.0).map_err(|_| JwtError::OpenSSLError)?;
-                let ybn = bn::BigNum::from_slice(&y.0).map_err(|_| JwtError::OpenSSLError)?;
+                let xbn = bn::BigNum::from_slice(&x.0).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
+                let ybn = bn::BigNum::from_slice(&y.0).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
                 let pkey = ec::EcKey::from_public_key_affine_coordinates(&ec_group, &xbn, &ybn)
-                    .map_err(|_| JwtError::OpenSSLError)?;
+                    .map_err(|e| {
+                        debug!(?e);
+                        JwtError::OpenSSLError
+                    })?;
 
-                pkey.check_key().map_err(|_| JwtError::OpenSSLError)?;
+                pkey.check_key().map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
+
+                let kid = kid.clone();
 
                 Ok(match crv {
-                    EcCurve::P256 => JwsValidator::ES256 { pkey, digest },
+                    EcCurve::P256 => JwsValidator::ES256 { kid, pkey, digest },
                 })
             }
             Jwk::RSA {
@@ -666,17 +849,27 @@ impl TryFrom<&Jwk> for JwsValidator {
                 e,
                 alg: _,
                 use_: _,
-                kid: _,
+                kid,
             } => {
                 let digest = hash::MessageDigest::sha256();
 
-                let nbn = bn::BigNum::from_slice(&n.0).map_err(|_| JwtError::OpenSSLError)?;
-                let ebn = bn::BigNum::from_slice(&e.0).map_err(|_| JwtError::OpenSSLError)?;
+                let nbn = bn::BigNum::from_slice(&n.0).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
+                let ebn = bn::BigNum::from_slice(&e.0).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-                let pkey = rsa::Rsa::from_public_components(nbn, ebn)
-                    .map_err(|_| JwtError::OpenSSLError)?;
+                let pkey = rsa::Rsa::from_public_components(nbn, ebn).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-                Ok(JwsValidator::RS256 { pkey, digest })
+                let kid = kid.clone();
+
+                Ok(JwsValidator::RS256 { kid, pkey, digest })
             }
         }
     }
@@ -687,12 +880,28 @@ impl TryFrom<x509::X509> for JwsValidator {
     type Error = JwtError;
 
     fn try_from(value: x509::X509) -> Result<Self, Self::Error> {
-        let pkey = value.public_key().map_err(|_| JwtError::OpenSSLError)?;
+        let pkey = value.public_key().map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
         let digest = hash::MessageDigest::sha256();
         pkey.ec_key()
-            .map(|pkey| JwsValidator::ES256 { pkey, digest })
-            .or_else(|_| pkey.rsa().map(|pkey| JwsValidator::RS256 { pkey, digest }))
-            .map_err(|_| JwtError::OpenSSLError)
+            .map(|pkey| JwsValidator::ES256 {
+                kid: None,
+                pkey,
+                digest,
+            })
+            .or_else(|_| {
+                pkey.rsa().map(|pkey| JwsValidator::RS256 {
+                    kid: None,
+                    pkey,
+                    digest,
+                })
+            })
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            })
     }
 }
 
@@ -700,28 +909,52 @@ impl TryFrom<x509::X509> for JwsValidator {
 impl JwsSigner {
     #[cfg(test)]
     pub fn from_es256_jwk_components(x: &str, y: &str, d: &str) -> Result<Self, JwtError> {
-        let x = base64::decode_config(x, base64::URL_SAFE_NO_PAD)
-            .map_err(|_| JwtError::InvalidBase64)?;
-        let y = base64::decode_config(y, base64::URL_SAFE_NO_PAD)
-            .map_err(|_| JwtError::InvalidBase64)?;
+        let x = base64::decode_config(x, base64::URL_SAFE_NO_PAD).map_err(|e| {
+            debug!(?e);
+            JwtError::InvalidBase64
+        })?;
+        let y = base64::decode_config(y, base64::URL_SAFE_NO_PAD).map_err(|e| {
+            debug!(?e);
+            JwtError::InvalidBase64
+        })?;
 
-        let d = base64::decode_config(&d, base64::URL_SAFE_NO_PAD)
-            .map_err(|_| JwtError::InvalidBase64)?;
+        let d = base64::decode_config(&d, base64::URL_SAFE_NO_PAD).map_err(|e| {
+            debug!(?e);
+            JwtError::InvalidBase64
+        })?;
 
-        let xbn = bn::BigNum::from_slice(&x).map_err(|_| JwtError::OpenSSLError)?;
-        let ybn = bn::BigNum::from_slice(&y).map_err(|_| JwtError::OpenSSLError)?;
-        let dbn = bn::BigNum::from_slice(&d).map_err(|_| JwtError::OpenSSLError)?;
+        let xbn = bn::BigNum::from_slice(&x).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
+        let ybn = bn::BigNum::from_slice(&y).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
+        let dbn = bn::BigNum::from_slice(&d).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
 
-        let ec_group = ec::EcGroup::from_curve_name(nid::Nid::X9_62_PRIME256V1)
-            .map_err(|_| JwtError::OpenSSLError)?;
+        let ec_group = ec::EcGroup::from_curve_name(nid::Nid::X9_62_PRIME256V1).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
 
-        let pkey = ec::EcKey::from_public_key_affine_coordinates(&ec_group, &xbn, &ybn)
-            .map_err(|_| JwtError::OpenSSLError)?;
+        let pkey =
+            ec::EcKey::from_public_key_affine_coordinates(&ec_group, &xbn, &ybn).map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            })?;
 
         let digest = hash::MessageDigest::sha256();
 
-        let skey = ec::EcKey::from_private_components(&ec_group, &dbn, pkey.public_key())
-            .map_err(|_| JwtError::OpenSSLError)?;
+        let skey = ec::EcKey::from_private_components(&ec_group, &dbn, pkey.public_key()).map_err(
+            |e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            },
+        )?;
 
         skey.check_key().map_err(|_| JwtError::OpenSSLError)?;
 
@@ -729,7 +962,10 @@ impl JwsSigner {
             .private_key_to_der()
             .and_then(|der| hash::hash(digest, &der))
             .map(|hashout| hex::encode(hashout))
-            .map_err(|_| JwtError::OpenSSLError)?;
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            })?;
 
         Ok(JwsSigner::ES256 { kid, skey, digest })
     }
@@ -754,38 +990,53 @@ impl JwsSigner {
         Ok(JwsSigner::HS256 { kid, skey, digest })
     }
 
+    /// Retrieve the Jwa alg that is in use
+    pub fn get_jwa_alg(&self) -> JwaAlg {
+        match self {
+            JwsSigner::ES256 { .. } => JwaAlg::ES256,
+            JwsSigner::RS256 { .. } => JwaAlg::RS256,
+            JwsSigner::HS256 { .. } => JwaAlg::HS256,
+        }
+    }
+
     /// Given this signer, retrieve the matching validator which can be paired with this.
     pub fn get_validator(&self) -> Result<JwsValidator, JwtError> {
         match self {
-            JwsSigner::ES256 {
-                kid: _,
-                skey,
-                digest,
-            } => ec::EcKey::from_public_key(skey.group(), skey.public_key())
-                .map_err(|_| JwtError::OpenSSLError)
-                .map(|pkey| JwsValidator::ES256 {
-                    pkey,
-                    digest: *digest,
-                }),
-            JwsSigner::RS256 {
-                kid: _,
-                skey,
-                digest,
-            } => {
-                let n = skey.n().to_owned().map_err(|_| JwtError::OpenSSLError)?;
-                let e = skey.e().to_owned().map_err(|_| JwtError::OpenSSLError)?;
-                rsa::Rsa::from_public_components(n, e)
+            JwsSigner::ES256 { kid, skey, digest } => {
+                ec::EcKey::from_public_key(skey.group(), skey.public_key())
+                    .map_err(|e| {
+                        debug!(?e);
+                        JwtError::OpenSSLError
+                    })
                     .map_err(|_| JwtError::OpenSSLError)
-                    .map(|pkey| JwsValidator::RS256 {
+                    .map(|pkey| JwsValidator::ES256 {
+                        kid: Some(kid.clone()),
                         pkey,
                         digest: *digest,
                     })
             }
-            JwsSigner::HS256 {
-                kid: _,
-                skey,
-                digest,
-            } => Ok(JwsValidator::HS256 {
+            JwsSigner::RS256 { kid, skey, digest } => {
+                let n = skey.n().to_owned().map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
+                let e = skey.e().to_owned().map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
+                rsa::Rsa::from_public_components(n, e)
+                    .map_err(|e| {
+                        debug!(?e);
+                        JwtError::OpenSSLError
+                    })
+                    .map(|pkey| JwsValidator::RS256 {
+                        kid: Some(kid.clone()),
+                        pkey,
+                        digest: *digest,
+                    })
+            }
+            JwsSigner::HS256 { kid, skey, digest } => Ok(JwsValidator::HS256 {
+                kid: Some(kid.clone()),
                 skey: skey.clone(),
                 digest: *digest,
             }),
@@ -798,9 +1049,15 @@ impl JwsSigner {
 
         let kid = hash::hash(digest, der)
             .map(|hashout| hex::encode(hashout))
-            .map_err(|_| JwtError::OpenSSLError)?;
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            })?;
 
-        let skey = ec::EcKey::private_key_from_der(der).map_err(|_| JwtError::OpenSSLError)?;
+        let skey = ec::EcKey::private_key_from_der(der).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
 
         Ok(JwsSigner::ES256 { kid, skey, digest })
     }
@@ -811,9 +1068,15 @@ impl JwsSigner {
 
         let kid = hash::hash(digest, der)
             .map(|hashout| hex::encode(hashout))
-            .map_err(|_| JwtError::OpenSSLError)?;
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            })?;
 
-        let skey = rsa::Rsa::private_key_from_der(der).map_err(|_| JwtError::OpenSSLError)?;
+        let skey = rsa::Rsa::private_key_from_der(der).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
 
         Ok(JwsSigner::RS256 { kid, skey, digest })
     }
@@ -841,21 +1104,26 @@ impl JwsSigner {
                 kid: _,
                 skey,
                 digest: _,
-            } => skey
-                .private_key_to_der()
-                .map_err(|_| JwtError::OpenSSLError),
+            } => skey.private_key_to_der().map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            }),
             JwsSigner::RS256 {
                 kid: _,
                 skey,
                 digest: _,
-            } => skey
-                .private_key_to_der()
-                .map_err(|_| JwtError::OpenSSLError),
+            } => skey.private_key_to_der().map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            }),
             JwsSigner::HS256 {
                 kid: _,
                 skey: _,
                 digest: _,
-            } => Err(JwtError::PrivateKeyDenied),
+            } => {
+                debug!("unable to release hs256 private key");
+                Err(JwtError::PrivateKeyDenied)
+            }
         }
     }
 
@@ -935,14 +1203,26 @@ impl JwsSigner {
                 let pkey = skey.public_key();
                 let ec_group = skey.group();
 
-                let mut bnctx = bn::BigNumContext::new().map_err(|_| JwtError::OpenSSLError)?;
+                let mut bnctx = bn::BigNumContext::new().map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-                let mut xbn = bn::BigNum::new().map_err(|_| JwtError::OpenSSLError)?;
+                let mut xbn = bn::BigNum::new().map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-                let mut ybn = bn::BigNum::new().map_err(|_| JwtError::OpenSSLError)?;
+                let mut ybn = bn::BigNum::new().map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
                 pkey.affine_coordinates_gfp(ec_group, &mut xbn, &mut ybn, &mut bnctx)
-                    .map_err(|_| JwtError::OpenSSLError)?;
+                    .map_err(|e| {
+                        debug!(?e);
+                        JwtError::OpenSSLError
+                    })?;
 
                 let mut public_key_x = Vec::with_capacity(32);
                 let mut public_key_y = Vec::with_capacity(32);
@@ -973,15 +1253,15 @@ impl JwsSigner {
                 skey,
                 digest: _,
             } => {
-                let public_key_n = skey
-                    .n()
-                    .to_vec_padded(RSA_SIG_SIZE)
-                    .map_err(|_| JwtError::OpenSSLError)?;
+                let public_key_n = skey.n().to_vec_padded(RSA_SIG_SIZE).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-                let public_key_e = skey
-                    .e()
-                    .to_vec_padded(3)
-                    .map_err(|_| JwtError::OpenSSLError)?;
+                let public_key_e = skey.e().to_vec_padded(3).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
                 Ok(Jwk::RSA {
                     n: Base64UrlSafeData(public_key_n),
