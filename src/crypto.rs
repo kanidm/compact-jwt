@@ -229,6 +229,7 @@ impl fmt::Debug for JwsValidator {
     }
 }
 
+#[cfg(feature = "openssl")]
 impl JwsValidator {
     /// Get the KID of this validator if present
     pub fn get_jwk_kid(&self) -> Option<&str> {
