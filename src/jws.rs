@@ -106,7 +106,7 @@ where
         // We need to convert this payload to a set of bytes.
         // eprintln!("{:?}", serde_json::to_string(&self));
         let payload = serde_json::to_vec(&self).map_err(|e| {
-            debug!(?e, "Invalid Jwt - Serde Error");
+            error!(?e, "Invalid Jws - Serde Error");
             JwtError::InvalidJwt
         })?;
 
@@ -151,7 +151,7 @@ impl JwsUnverified {
         let released = self.jwsc.validate(validator)?;
 
         serde_json::from_slice(released.payload()).map_err(|e| {
-            debug!(?e, "Invalid Jwt - Serde Error");
+            error!(?e, "Invalid Jws - Serde Error");
             JwtError::InvalidJwt
         })
     }
@@ -216,7 +216,10 @@ impl JwsUnverified {
     {
         let released = self.jwsc.release_without_verification()?;
 
-        serde_json::from_slice(released.payload()).map_err(|_| JwtError::InvalidJwt)
+        serde_json::from_slice(released.payload()).map_err(|e| {
+            error!(?e, "Invalid Jws - Serde Error");
+            JwtError::InvalidJwt
+        })
     }
 }
 
