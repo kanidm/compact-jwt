@@ -402,7 +402,7 @@ impl JwsInner {
 
         let sign_input = format!("{}.{}", hdr_b64, payload_b64).as_bytes().to_vec();
 
-        trace!("sinput -> {:?}", sign_input);
+        // trace!("sinput -> {:?}", sign_input);
 
         // Compute the signature!
         let signature = match signer {
