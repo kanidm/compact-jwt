@@ -86,6 +86,7 @@ pub struct OidcToken {
     /// Issued at time.
     pub iat: i64,
     /// Time when the user originally authenticated.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_time: Option<i64>,
     /// Comes from authn req
     #[serde(skip_serializing_if = "Option::is_none")]
