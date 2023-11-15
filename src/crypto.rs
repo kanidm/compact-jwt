@@ -5,6 +5,8 @@ use openssl::{bn, ec, ecdsa, hash, nid, pkey, rand, rsa, sign, x509};
 #[cfg(feature = "openssl")]
 use std::convert::TryFrom;
 
+use base64::{engine::general_purpose, Engine as _};
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -395,8 +397,8 @@ impl JwsInner {
                 debug!(?e);
                 JwtError::InvalidHeaderFormat
             })
-            .map(|bytes| base64::encode_config(&bytes, base64::URL_SAFE_NO_PAD))?;
-        let payload_b64 = base64::encode_config(&self.payload, base64::URL_SAFE_NO_PAD);
+            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(&bytes))?;
+        let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(&self.payload);
 
         // trace!("sinput -> {}", format!("{}.{}", hdr_b64, payload_b64));
 
@@ -511,7 +513,8 @@ impl JwsCompact {
         fullchain
             .get(0)
             .map(|value| {
-                base64::decode(value)
+                general_purpose::STANDARD
+                    .decode(value)
                     .map_err(|_| JwtError::InvalidBase64)
                     .and_then(|bytes| {
                         x509::X509::from_der(&bytes).map_err(|e| {
@@ -533,7 +536,8 @@ impl JwsCompact {
         let fullchain: Result<Vec<_>, _> = fullchain
             .iter()
             .map(|value| {
-                base64::decode(value)
+                general_purpose::STANDARD
+                    .decode(value)
                     .map_err(|_| JwtError::InvalidBase64)
                     .and_then(|bytes| {
                         x509::X509::from_der(&bytes).map_err(|e| {
@@ -717,7 +721,8 @@ impl FromStr for JwsCompact {
             JwtError::InvalidCompactFormat
         })?;
 
-        let header: ProtectedHeader = base64::decode_config(hdr_str, base64::URL_SAFE_NO_PAD)
+        let header: ProtectedHeader = general_purpose::URL_SAFE_NO_PAD
+            .decode(hdr_str)
             .map_err(|_| JwtError::InvalidBase64)
             .and_then(|bytes| {
                 serde_json::from_slice(&bytes).map_err(|e| {
@@ -752,16 +757,19 @@ impl FromStr for JwsCompact {
             return Err(JwtError::InvalidCompactFormat);
         }
 
-        let payload =
-            base64::decode_config(payload_str, base64::URL_SAFE_NO_PAD).map_err(|_| {
+        let payload = general_purpose::URL_SAFE_NO_PAD
+            .decode(payload_str)
+            .map_err(|_| {
                 debug!("invalid base64");
                 JwtError::InvalidBase64
             })?;
 
-        let signature = base64::decode_config(sig_str, base64::URL_SAFE_NO_PAD).map_err(|_| {
-            debug!("invalid base64");
-            JwtError::InvalidBase64
-        })?;
+        let signature = general_purpose::URL_SAFE_NO_PAD
+            .decode(sig_str)
+            .map_err(|_| {
+                debug!("invalid base64");
+                JwtError::InvalidBase64
+            })?;
 
         #[cfg(feature = "openssl")]
         let sign_input = {
@@ -790,9 +798,9 @@ impl fmt::Display for JwsCompact {
                 debug!(?e, "unable to serialise to json");
                 fmt::Error
             })
-            .map(|bytes| base64::encode_config(&bytes, base64::URL_SAFE_NO_PAD))?;
-        let payload = base64::encode_config(&self.payload, base64::URL_SAFE_NO_PAD);
-        let sig = base64::encode_config(&self.signature, base64::URL_SAFE_NO_PAD);
+            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(bytes))?;
+        let payload = general_purpose::URL_SAFE_NO_PAD.encode(&self.payload);
+        let sig = general_purpose::URL_SAFE_NO_PAD.encode(&self.signature);
         write!(f, "{}.{}.{}", hdr, payload, sig)
     }
 }
@@ -910,16 +918,16 @@ impl TryFrom<x509::X509> for JwsValidator {
 impl JwsSigner {
     #[cfg(test)]
     pub fn from_es256_jwk_components(x: &str, y: &str, d: &str) -> Result<Self, JwtError> {
-        let x = base64::decode_config(x, base64::URL_SAFE_NO_PAD).map_err(|e| {
+        let x = general_purpose::URL_SAFE_NO_PAD.decode(x).map_err(|e| {
             debug!(?e);
             JwtError::InvalidBase64
         })?;
-        let y = base64::decode_config(y, base64::URL_SAFE_NO_PAD).map_err(|e| {
+        let y = general_purpose::URL_SAFE_NO_PAD.decode(y).map_err(|e| {
             debug!(?e);
             JwtError::InvalidBase64
         })?;
 
-        let d = base64::decode_config(&d, base64::URL_SAFE_NO_PAD).map_err(|e| {
+        let d = general_purpose::URL_SAFE_NO_PAD.decode(d).map_err(|e| {
             debug!(?e);
             JwtError::InvalidBase64
         })?;
@@ -1284,6 +1292,7 @@ impl JwsSigner {
 #[cfg(all(feature = "openssl", test))]
 mod tests {
     use super::{Jwk, JwsCompact, JwsInner, JwsSigner, JwsValidator};
+    use base64::{engine::general_purpose, Engine as _};
     use std::convert::TryFrom;
     use std::str::FromStr;
 
@@ -1522,8 +1531,8 @@ mod tests {
         assert!(jwsc.get_jwk_pubkey_url().is_none());
         assert!(jwsc.get_jwk_pubkey().is_none());
 
-        let skey = base64::decode_config(
-        "AyM1SysPpbyDfgZld3umj1qzKObwVMkoqQ-EstJQLr_T-1qS0gZH75aKtMN3Yj0iPS4hcgUuTwjAzZr1Z9CAow", base64::URL_SAFE_NO_PAD
+        let skey = general_purpose::URL_SAFE_NO_PAD.decode(
+        "AyM1SysPpbyDfgZld3umj1qzKObwVMkoqQ-EstJQLr_T-1qS0gZH75aKtMN3Yj0iPS4hcgUuTwjAzZr1Z9CAow"
         ).expect("Invalid key");
 
         let jws_signer = JwsSigner::from_hs256_raw(&skey).expect("Unable to create validator");
