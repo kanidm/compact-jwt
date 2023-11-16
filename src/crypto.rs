@@ -281,7 +281,7 @@ pub(crate) struct JwsCompact {
     header: ProtectedHeader,
     hdr_b64: String,
     payload_b64: String,
-    payload: Vec<u8>,
+    // payload: Vec<u8>,
     signature: Vec<u8>,
 }
 
