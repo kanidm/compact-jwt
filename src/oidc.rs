@@ -1,8 +1,8 @@
 //! Oidc token implementation
 
-use crate::crypto::JwsCompact;
+use crate::compact::{JwsCompact, JwsInner};
 #[cfg(feature = "openssl")]
-use crate::crypto::{JwsInner, JwsSigner, JwsValidator};
+use crate::crypto::{JwsSigner, JwsValidator};
 use crate::error::JwtError;
 use crate::{btreemap_empty, vec_empty};
 use serde::{Deserialize, Serialize};

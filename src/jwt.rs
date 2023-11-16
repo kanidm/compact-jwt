@@ -1,9 +1,9 @@
 //! Jwt implementation
 
 use crate::btreemap_empty;
-use crate::crypto::{Jwk, JwsCompact};
+use crate::compact::{Jwk, JwsCompact, JwsInner};
 #[cfg(feature = "openssl")]
-use crate::crypto::{JwsInner, JwsSigner, JwsValidator};
+use crate::crypto::{JwsSigner, JwsValidator};
 #[cfg(feature = "openssl")]
 use url::Url;
 

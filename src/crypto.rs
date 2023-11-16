@@ -1,8 +1,4 @@
-//! JWS Cryptographic Operations
-
-#[cfg(feature = "openssl")]
 use openssl::{bn, ec, ecdsa, hash, nid, pkey, rand, rsa, sign, x509};
-#[cfg(feature = "openssl")]
 use std::convert::TryFrom;
 
 use base64::{engine::general_purpose, Engine as _};
@@ -15,99 +11,13 @@ use url::Url;
 use crate::error::JwtError;
 use base64urlsafedata::Base64UrlSafeData;
 
-#[cfg(feature = "openssl")]
+use crate::compact::{EcCurve, JwaAlg, Jwk, JwkUse, JwsCompact, JwsInner, ProtectedHeader};
+
 const RSA_MIN_SIZE: u32 = 3072;
-#[cfg(feature = "openssl")]
 const RSA_SIG_SIZE: i32 = 384;
-
-// https://datatracker.ietf.org/doc/html/rfc7515
-
-#[derive(Debug, Serialize, Clone, Deserialize)]
-/// A set of jwk keys
-pub struct JwkKeySet {
-    /// The set of jwks
-    pub keys: Vec<Jwk>,
-}
-
-#[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
-#[allow(non_camel_case_types)]
-/// Valid Eliptic Curves
-pub enum EcCurve {
-    #[serde(rename = "P-256")]
-    /// Nist P-256
-    P256,
-}
-
-#[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
-#[allow(non_camel_case_types)]
-#[serde(tag = "kty")]
-/// A JWK formatted public key that can be used to validate a signature
-pub enum Jwk {
-    /// An Eliptic Curve Public Key
-    EC {
-        /// The Eliptic Curve in use
-        crv: EcCurve,
-        /// The public X component
-        x: Base64UrlSafeData,
-        /// The public Y component
-        y: Base64UrlSafeData,
-        // We don't decode d (private key) because that way we error defending from
-        // the fact that ... well you leaked your private key.
-        // d: Base64UrlSafeData
-        /// The algorithm in use for this key
-        #[serde(skip_serializing_if = "Option::is_none")]
-        alg: Option<JwaAlg>,
-        #[serde(rename = "use", skip_serializing_if = "Option::is_none")]
-        /// The usage of this key
-        use_: Option<JwkUse>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        /// The key id
-        kid: Option<String>,
-    },
-    /// Legacy RSA public key
-    RSA {
-        /// Public n value
-        n: Base64UrlSafeData,
-        /// Public exponent
-        e: Base64UrlSafeData,
-        /// The algorithm in use for this key
-        #[serde(skip_serializing_if = "Option::is_none")]
-        alg: Option<JwaAlg>,
-        #[serde(rename = "use", skip_serializing_if = "Option::is_none")]
-        /// The usage of this key
-        use_: Option<JwkUse>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        /// The key id
-        kid: Option<String>,
-    },
-}
-
-#[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-/// What this key is used for
-pub enum JwkUse {
-    /// This key is for signing.
-    Sig,
-    /// This key is for encryption
-    Enc,
-}
-
-#[derive(Debug, Serialize, Copy, Clone, Deserialize, PartialEq, Default)]
-#[allow(non_camel_case_types)]
-/// Cryptographic algorithm
-pub enum JwaAlg {
-    /// ECDSA with P-256 and SHA256
-    #[default]
-    ES256,
-    /// RSASSA-PKCS1-v1_5 with SHA-256
-    RS256,
-    /// HMAC SHA256
-    HS256,
-}
 
 /// A private key and associated information that can sign Oidc and Jwt data.
 #[derive(Clone)]
-#[cfg(feature = "openssl")]
 pub enum JwsSigner {
     /// Eliptic Curve P-256
     ES256 {
@@ -138,7 +48,6 @@ pub enum JwsSigner {
     },
 }
 
-#[cfg(feature = "openssl")]
 impl std::cmp::PartialEq for JwsSigner {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -156,10 +65,8 @@ impl std::cmp::PartialEq for JwsSigner {
     }
 }
 
-#[cfg(feature = "openssl")]
 impl std::cmp::Eq for JwsSigner {}
 
-#[cfg(feature = "openssl")]
 impl std::hash::Hash for JwsSigner {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
@@ -172,7 +79,6 @@ impl std::hash::Hash for JwsSigner {
     }
 }
 
-#[cfg(feature = "openssl")]
 impl fmt::Debug for JwsSigner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -194,7 +100,6 @@ impl fmt::Debug for JwsSigner {
 
 /// A public key with associated information that can validate the signatures of Oidc and Jwt data.
 #[derive(Clone)]
-#[cfg(feature = "openssl")]
 pub enum JwsValidator {
     /// Eliptic Curve P-256
     ES256 {
@@ -225,14 +130,12 @@ pub enum JwsValidator {
     },
 }
 
-#[cfg(feature = "openssl")]
 impl fmt::Debug for JwsValidator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("JwsValidator").finish()
     }
 }
 
-#[cfg(feature = "openssl")]
 impl JwsValidator {
     /// Get the KID of this validator if present
     pub fn get_jwk_kid(&self) -> Option<&str> {
@@ -244,253 +147,6 @@ impl JwsValidator {
     }
 }
 
-#[derive(Debug, Serialize, Clone, Deserialize, Default)]
-struct ProtectedHeader {
-    alg: JwaAlg,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    jku: Option<Url>,
-    // https://datatracker.ietf.org/doc/html/rfc7517
-    #[serde(skip_serializing_if = "Option::is_none")]
-    jwk: Option<Jwk>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    kid: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    crit: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    typ: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cty: Option<String>,
-
-    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
-    x5u: Option<()>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    x5c: Option<Vec<String>>,
-    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
-    x5t: Option<()>,
-    #[serde(
-        skip_deserializing,
-        rename = "x5t#S256",
-        skip_serializing_if = "Option::is_none"
-    )]
-    x5t_s256: Option<()>,
-    // Don't allow extra header names?
-}
-
-#[derive(Clone)]
-pub(crate) struct JwsCompact {
-    header: ProtectedHeader,
-    hdr_b64: String,
-    payload_b64: String,
-    signature: Vec<u8>,
-}
-
-impl fmt::Debug for JwsCompact {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("JwsCompact")
-            .field("header", &self.header)
-            .field("payload", &self.payload_b64)
-            .finish()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct JwsInner {
-    #[allow(dead_code)]
-    header: ProtectedHeader,
-    #[allow(dead_code)]
-    payload: Vec<u8>,
-}
-
-#[cfg(feature = "openssl")]
-impl JwsInner {
-    pub fn new(payload: Vec<u8>) -> Self {
-        JwsInner {
-            header: ProtectedHeader::default(),
-            payload,
-        }
-    }
-
-    pub fn set_kid(mut self, kid: String) -> Self {
-        self.header.kid = Some(kid);
-        self
-    }
-
-    pub fn set_typ(mut self, typ: String) -> Self {
-        self.header.typ = Some(typ);
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn set_cty(mut self, cty: String) -> Self {
-        self.header.cty = Some(cty);
-        self
-    }
-}
-
-#[cfg(feature = "openssl")]
-impl JwsInner {
-    #[cfg(test)]
-    pub fn sign_embed_public_jwk(&self, signer: &JwsSigner) -> Result<JwsCompact, JwtError> {
-        let jwk = signer.public_key_as_jwk()?;
-        self.sign_inner(signer, None, Some(jwk))
-    }
-
-    #[cfg(test)]
-    pub fn sign(&self, signer: &JwsSigner) -> Result<JwsCompact, JwtError> {
-        self.sign_inner(signer, None, None)
-    }
-
-    pub(crate) fn sign_inner(
-        &self,
-        signer: &JwsSigner,
-        jku: Option<Url>,
-        jwk: Option<Jwk>,
-    ) -> Result<JwsCompact, JwtError> {
-        let alg = match signer {
-            JwsSigner::ES256 { .. } => JwaAlg::ES256,
-            JwsSigner::RS256 { .. } => JwaAlg::RS256,
-            JwsSigner::HS256 { .. } => JwaAlg::HS256,
-        };
-
-        let mut header = self.header.clone();
-        // Update the alg with what we have been requested to sign with.
-        header.alg = alg;
-        header.jku = jku;
-        header.jwk = jwk;
-
-        let hdr_b64 = serde_json::to_vec(&header)
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::InvalidHeaderFormat
-            })
-            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(&bytes))?;
-        let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(&self.payload);
-
-        // Compute the signature!
-        let signature = match signer {
-            JwsSigner::ES256 {
-                kid: _,
-                skey,
-                digest,
-            } => {
-                let mut hasher = hash::Hasher::new(*digest).map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })?;
-
-                hasher
-                    .update(hdr_b64.as_bytes())
-                    .and_then(|_| hasher.update(".".as_bytes()))
-                    .and_then(|_| hasher.update(payload_b64.as_bytes()))
-                    .map_err(|e| {
-                        debug!(?e);
-                        JwtError::OpenSSLError
-                    })?;
-
-                let hashout = hasher.finish().map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })?;
-
-                let ec_sig = ecdsa::EcdsaSig::sign(&hashout, skey).map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })?;
-
-                let mut r = [0; 32];
-                let r_vec = ec_sig.r().to_vec();
-                let (_left, right) = r.split_at_mut(32 - r_vec.len());
-                right.copy_from_slice(r_vec.as_slice());
-                let mut s = [0; 32];
-                let s_vec = ec_sig.s().to_vec();
-                let (_left, right) = s.split_at_mut(32 - s_vec.len());
-                right.copy_from_slice(s_vec.as_slice());
-
-                // trace!("r {:?}", r);
-                // trace!("s {:?}", s);
-
-                let mut signature = Vec::with_capacity(64);
-                signature.extend_from_slice(&r);
-                signature.extend_from_slice(&s);
-                signature
-            }
-            JwsSigner::RS256 {
-                kid: _,
-                skey,
-                digest,
-            } => {
-                let key = pkey::PKey::from_rsa(skey.clone()).map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })?;
-
-                let mut signer = sign::Signer::new(*digest, &key).map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })?;
-
-                signer.set_rsa_padding(rsa::Padding::PKCS1).map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })?;
-
-                signer
-                    .update(hdr_b64.as_bytes())
-                    .and_then(|_| signer.update(".".as_bytes()))
-                    .and_then(|_| signer.update(payload_b64.as_bytes()))
-                    .map_err(|e| {
-                        debug!(?e);
-                        JwtError::OpenSSLError
-                    })?;
-
-                signer.sign_to_vec().map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })?
-            }
-            JwsSigner::HS256 {
-                kid: _,
-                skey,
-                digest,
-            } => {
-                let mut signer = sign::Signer::new(*digest, skey).map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })?;
-
-                signer
-                    .update(hdr_b64.as_bytes())
-                    .and_then(|_| signer.update(".".as_bytes()))
-                    .and_then(|_| signer.update(payload_b64.as_bytes()))
-                    .map_err(|e| {
-                        debug!(?e);
-                        JwtError::OpenSSLError
-                    })?;
-
-                signer.sign_to_vec().map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })?
-            }
-        };
-
-        Ok(JwsCompact {
-            header,
-            hdr_b64,
-            payload_b64,
-            signature,
-        })
-    }
-}
-
-#[cfg(any(feature = "openssl", feature = "unsafe_release_without_verify"))]
-impl JwsInner {
-    pub(crate) fn payload(&self) -> &[u8] {
-        &self.payload
-    }
-}
-
-#[cfg(feature = "openssl")]
 impl JwsCompact {
     #[cfg(test)]
     fn check_vectors(&self, chk_input: &[u8], chk_sig: &[u8]) -> bool {
@@ -724,89 +380,176 @@ impl JwsCompact {
     }
 }
 
-impl JwsCompact {
-    pub fn get_jwk_kid(&self) -> Option<&str> {
-        self.header.kid.as_deref()
+impl JwsInner {
+    pub fn new(payload: Vec<u8>) -> Self {
+        JwsInner {
+            header: ProtectedHeader::default(),
+            payload,
+        }
+    }
+
+    pub fn set_kid(mut self, kid: String) -> Self {
+        self.header.kid = Some(kid);
+        self
+    }
+
+    pub fn set_typ(mut self, typ: String) -> Self {
+        self.header.typ = Some(typ);
+        self
     }
 
     #[allow(dead_code)]
-    pub fn get_jwk_pubkey_url(&self) -> Option<&Url> {
-        self.header.jku.as_ref()
-    }
-
-    #[allow(dead_code)]
-    pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
-        self.header.jwk.as_ref()
-    }
-
-    #[cfg(feature = "unsafe_release_without_verify")]
-    pub(crate) fn release_without_verification(&self) -> Result<JwsInner, JwtError> {
-        warn!("UNSAFE RELEASE OF JWT WAS PERFORMED");
-        Ok(JwsInner {
-            header: (&self.header).into(),
-            payload: self.payload.clone(),
-        })
+    pub fn set_cty(mut self, cty: String) -> Self {
+        self.header.cty = Some(cty);
+        self
     }
 }
 
-impl FromStr for JwsCompact {
-    type Err = JwtError;
+impl JwsInner {
+    #[cfg(test)]
+    pub fn sign_embed_public_jwk(&self, signer: &JwsSigner) -> Result<JwsCompact, JwtError> {
+        let jwk = signer.public_key_as_jwk()?;
+        self.sign_inner(signer, None, Some(jwk))
+    }
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // split on the ".".
-        let mut siter = s.splitn(3, '.');
+    #[cfg(test)]
+    pub fn sign(&self, signer: &JwsSigner) -> Result<JwsCompact, JwtError> {
+        self.sign_inner(signer, None, None)
+    }
 
-        let hdr_str = siter.next().ok_or_else(|| {
-            debug!("invalid compact format - protected header not present");
-            JwtError::InvalidCompactFormat
-        })?;
+    pub(crate) fn sign_inner(
+        &self,
+        signer: &JwsSigner,
+        jku: Option<Url>,
+        jwk: Option<Jwk>,
+    ) -> Result<JwsCompact, JwtError> {
+        let alg = match signer {
+            JwsSigner::ES256 { .. } => JwaAlg::ES256,
+            JwsSigner::RS256 { .. } => JwaAlg::RS256,
+            JwsSigner::HS256 { .. } => JwaAlg::HS256,
+        };
 
-        let header: ProtectedHeader = general_purpose::URL_SAFE_NO_PAD
-            .decode(hdr_str)
-            .map_err(|_| JwtError::InvalidBase64)
-            .and_then(|bytes| {
-                serde_json::from_slice(&bytes).map_err(|e| {
-                    debug!(?e, "invalid header format - invalid json");
-                    JwtError::InvalidHeaderFormat
-                })
-            })?;
+        let mut header = self.header.clone();
+        // Update the alg with what we have been requested to sign with.
+        header.alg = alg;
+        header.jku = jku;
+        header.jwk = jwk;
 
-        let hdr_b64 = hdr_str.to_string();
+        let hdr_b64 = serde_json::to_vec(&header)
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::InvalidHeaderFormat
+            })
+            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(&bytes))?;
+        let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(&self.payload);
 
-        // Assert that from the critical field of the header, we have decoded all the needed types.
-        // Remember, anything in rfc7515 can NOT be in the crit field.
-        if let Some(crit) = &header.crit {
-            if !crit.is_empty() {
-                error!("critical extension - unable to process critical extensions");
-                return Err(JwtError::CriticalExtension);
+        // Compute the signature!
+        let signature = match signer {
+            JwsSigner::ES256 {
+                kid: _,
+                skey,
+                digest,
+            } => {
+                let mut hasher = hash::Hasher::new(*digest).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
+
+                hasher
+                    .update(hdr_b64.as_bytes())
+                    .and_then(|_| hasher.update(".".as_bytes()))
+                    .and_then(|_| hasher.update(payload_b64.as_bytes()))
+                    .map_err(|e| {
+                        debug!(?e);
+                        JwtError::OpenSSLError
+                    })?;
+
+                let hashout = hasher.finish().map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
+
+                let ec_sig = ecdsa::EcdsaSig::sign(&hashout, skey).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
+
+                let mut r = [0; 32];
+                let r_vec = ec_sig.r().to_vec();
+                let (_left, right) = r.split_at_mut(32 - r_vec.len());
+                right.copy_from_slice(r_vec.as_slice());
+                let mut s = [0; 32];
+                let s_vec = ec_sig.s().to_vec();
+                let (_left, right) = s.split_at_mut(32 - s_vec.len());
+                right.copy_from_slice(s_vec.as_slice());
+
+                // trace!("r {:?}", r);
+                // trace!("s {:?}", s);
+
+                let mut signature = Vec::with_capacity(64);
+                signature.extend_from_slice(&r);
+                signature.extend_from_slice(&s);
+                signature
             }
-        }
+            JwsSigner::RS256 {
+                kid: _,
+                skey,
+                digest,
+            } => {
+                let key = pkey::PKey::from_rsa(skey.clone()).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-        // Now we have a header, lets get the rest.
-        let payload_str = siter.next().ok_or_else(|| {
-            debug!("invalid compact format - payload not present");
-            JwtError::InvalidCompactFormat
-        })?;
+                let mut signer = sign::Signer::new(*digest, &key).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-        let sig_str = siter.next().ok_or_else(|| {
-            debug!("invalid compact format - signature not present");
-            JwtError::InvalidCompactFormat
-        })?;
+                signer.set_rsa_padding(rsa::Padding::PKCS1).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-        if siter.next().is_some() {
-            // Too much data.
-            debug!("invalid compact format - extra fields present");
-            return Err(JwtError::InvalidCompactFormat);
-        }
+                signer
+                    .update(hdr_b64.as_bytes())
+                    .and_then(|_| signer.update(".".as_bytes()))
+                    .and_then(|_| signer.update(payload_b64.as_bytes()))
+                    .map_err(|e| {
+                        debug!(?e);
+                        JwtError::OpenSSLError
+                    })?;
 
-        let payload_b64 = payload_str.to_string();
+                signer.sign_to_vec().map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?
+            }
+            JwsSigner::HS256 {
+                kid: _,
+                skey,
+                digest,
+            } => {
+                let mut signer = sign::Signer::new(*digest, skey).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
 
-        let signature = general_purpose::URL_SAFE_NO_PAD
-            .decode(sig_str)
-            .map_err(|_| {
-                debug!("invalid base64");
-                JwtError::InvalidBase64
-            })?;
+                signer
+                    .update(hdr_b64.as_bytes())
+                    .and_then(|_| signer.update(".".as_bytes()))
+                    .and_then(|_| signer.update(payload_b64.as_bytes()))
+                    .map_err(|e| {
+                        debug!(?e);
+                        JwtError::OpenSSLError
+                    })?;
+
+                signer.sign_to_vec().map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?
+            }
+        };
 
         Ok(JwsCompact {
             header,
@@ -817,14 +560,6 @@ impl FromStr for JwsCompact {
     }
 }
 
-impl fmt::Display for JwsCompact {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let sig = general_purpose::URL_SAFE_NO_PAD.encode(&self.signature);
-        write!(f, "{}.{}.{}", self.hdr_b64, self.payload_b64, sig)
-    }
-}
-
-#[cfg(feature = "openssl")]
 impl TryFrom<&Jwk> for JwsValidator {
     type Error = JwtError;
 
@@ -1310,7 +1045,8 @@ impl JwsSigner {
 
 #[cfg(all(feature = "openssl", test))]
 mod tests {
-    use super::{Jwk, JwsCompact, JwsInner, JwsSigner, JwsValidator};
+    use super::{JwsSigner, JwsValidator};
+    use crate::compact::{Jwk, JwsCompact, JwsInner};
     use base64::{engine::general_purpose, Engine as _};
     use std::convert::TryFrom;
     use std::str::FromStr;
