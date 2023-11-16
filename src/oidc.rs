@@ -2,7 +2,7 @@
 
 use crate::compact::{JwsCompact, JwsInner};
 #[cfg(feature = "openssl")]
-use crate::crypto::{JwsSigner, JwsValidator};
+use crate::crypto::{JwsSignerEnum, JwsValidatorEnum};
 use crate::error::JwtError;
 use crate::{btreemap_empty, vec_empty};
 use serde::{Deserialize, Serialize};
@@ -116,7 +116,7 @@ pub struct OidcToken {
 
 #[cfg(feature = "openssl")]
 impl OidcToken {
-    fn sign_inner(&self, signer: &JwsSigner, kid: Option<&str>) -> Result<OidcSigned, JwtError> {
+    fn sign_inner(&self, signer: &JwsSignerEnum, kid: Option<&str>) -> Result<OidcSigned, JwtError> {
         // We need to convert this payload to a set of bytes.
         trace!(
             "✅ {}",
@@ -139,14 +139,14 @@ impl OidcToken {
     }
 
     /// Use this private signer to created a signed oidc token.
-    pub fn sign(&self, signer: &JwsSigner) -> Result<OidcSigned, JwtError> {
+    pub fn sign(&self, signer: &JwsSignerEnum) -> Result<OidcSigned, JwtError> {
         self.sign_inner(signer, None)
     }
 
     /*
     /// set the key id (kid) into the header.
     /// use set_kid on jws.
-    pub fn sign_with_kid(&self, signer: &JwsSigner, kid: &str) -> Result<OidcSigned, JwtError> {
+    pub fn sign_with_kid(&self, signer: &JwsSignerEnum, kid: &str) -> Result<OidcSigned, JwtError> {
         self.sign_inner(signer, Some(kid))
     }
     */
@@ -154,7 +154,7 @@ impl OidcToken {
     /*
     /// Use this private signer to created a signed oidc token, which contains the public
     /// key for verification embedded in the header of the token.
-    pub fn sign_embed_public_jwk(&self, signer: &JwsSigner) -> Result<OidcSigned, JwtError> {
+    pub fn sign_embed_public_jwk(&self, signer: &JwsSignerEnum) -> Result<OidcSigned, JwtError> {
         let jwk = signer.public_key_as_jwk()?;
         self.sign_inner(signer, None, Some(jwk))
     }
@@ -163,10 +163,10 @@ impl OidcToken {
 
 #[cfg(feature = "openssl")]
 impl OidcUnverified {
-    /// Using this JwsValidator, assert the correct signature of the data contained in
+    /// Using this JwsValidatorEnum, assert the correct signature of the data contained in
     /// this token. The current time is represented by seconds since the epoch. You may
     /// choose to ignore exp validation by setting this to 0, but this is DANGEROUS.
-    pub fn validate(&self, validator: &JwsValidator, curtime: i64) -> Result<OidcToken, JwtError> {
+    pub fn validate(&self, validator: &JwsValidatorEnum, curtime: i64) -> Result<OidcToken, JwtError> {
         let released = self.jwsc.validate(validator)?;
 
         let tok: OidcToken =
@@ -237,7 +237,7 @@ impl fmt::Display for OidcSigned {
 #[cfg(all(feature = "openssl", test))]
 mod tests {
     use super::{OidcSubject, OidcToken, OidcUnverified};
-    use crate::crypto::{JwsSigner, JwsValidator};
+    use crate::crypto::{JwsSignerEnum, JwsValidatorEnum};
     use std::convert::TryFrom;
     use std::str::FromStr;
     use url::Url;
@@ -263,9 +263,9 @@ mod tests {
             claims: Default::default(),
         };
 
-        let jwss = JwsSigner::generate_es256().expect("failed to construct signer.");
+        let jwss = JwsSignerEnum::generate_es256().expect("failed to construct signer.");
         let pub_jwk = jwss.public_key_as_jwk().unwrap();
-        let jws_validator = JwsValidator::try_from(&pub_jwk).expect("Unable to create validator");
+        let jws_validator = JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
 
         let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
 
@@ -299,9 +299,9 @@ mod tests {
             claims: Default::default(),
         };
 
-        let jwss = JwsSigner::generate_es256().expect("failed to construct signer.");
+        let jwss = JwsSignerEnum::generate_es256().expect("failed to construct signer.");
         let pub_jwk = jwss.public_key_as_jwk().unwrap();
-        let jws_validator = JwsValidator::try_from(&pub_jwk).expect("Unable to create validator");
+        let jws_validator = JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
 
         let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
 

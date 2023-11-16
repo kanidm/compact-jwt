@@ -2,7 +2,7 @@
 
 use crate::compact::{Jwk, JwsCompact, JwsInner};
 #[cfg(feature = "openssl")]
-use crate::crypto::{JwsSigner, JwsValidator};
+use crate::crypto::{JwsSignerEnum, JwsValidatorEnum};
 #[cfg(feature = "openssl")]
 use openssl::x509;
 #[cfg(feature = "openssl")]
@@ -99,7 +99,7 @@ where
 {
     fn sign_inner(
         &self,
-        signer: &JwsSigner,
+        signer: &JwsSignerEnum,
         jku: Option<Url>,
         jwk: Option<Jwk>,
     ) -> Result<JwsSigned, JwtError> {
@@ -119,12 +119,12 @@ where
     }
 
     /// Use this private signer to created a signed jwt.
-    pub fn sign(&self, signer: &JwsSigner) -> Result<JwsSigned, JwtError> {
+    pub fn sign(&self, signer: &JwsSignerEnum) -> Result<JwsSigned, JwtError> {
         self.sign_inner(signer, None, None)
     }
 
     /// Use this to create a signed jwt that includes the public key used in the signing process
-    pub fn sign_embed_public_jwk(&self, signer: &JwsSigner) -> Result<JwsSigned, JwtError> {
+    pub fn sign_embed_public_jwk(&self, signer: &JwsSignerEnum) -> Result<JwsSigned, JwtError> {
         let jwk = signer.public_key_as_jwk()?;
         self.sign_inner(signer, None, Some(jwk))
     }
@@ -142,9 +142,9 @@ where
 
 #[cfg(feature = "openssl")]
 impl JwsUnverified {
-    /// Using this JwsValidator, assert the correct signature of the data contained in
+    /// Using this JwsValidatorEnum, assert the correct signature of the data contained in
     /// this jwt.
-    pub fn validate<V>(&self, validator: &JwsValidator) -> Result<Jws<V>, JwtError>
+    pub fn validate<V>(&self, validator: &JwsValidatorEnum) -> Result<Jws<V>, JwtError>
     where
         V: Clone + serde::de::DeserializeOwned,
     {
@@ -248,7 +248,7 @@ impl fmt::Display for JwsSigned {
 #[cfg(all(feature = "openssl", test))]
 mod tests {
     use super::Jws;
-    use crate::crypto::{JwsSigner, JwsValidator};
+    use crate::crypto::{JwsSignerEnum, JwsValidatorEnum};
     use serde::{Deserialize, Serialize};
     use std::convert::TryFrom;
 
@@ -260,9 +260,9 @@ mod tests {
     #[test]
     fn test_sign_and_validate_es256() {
         let _ = tracing_subscriber::fmt::try_init();
-        let jwss = JwsSigner::generate_es256().expect("failed to construct signer.");
+        let jwss = JwsSignerEnum::generate_es256().expect("failed to construct signer.");
         let pub_jwk = jwss.public_key_as_jwk().unwrap();
-        let jws_validator = JwsValidator::try_from(&pub_jwk).expect("Unable to create validator");
+        let jws_validator = JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
 
         let jwt = Jws {
             inner: CustomExtension {
@@ -287,7 +287,7 @@ mod tests {
     #[test]
     fn test_sign_and_validate_hs256() {
         let _ = tracing_subscriber::fmt::try_init();
-        let jwss = JwsSigner::generate_hs256().expect("failed to construct signer.");
+        let jwss = JwsSignerEnum::generate_hs256().expect("failed to construct signer.");
         let jws_validator = jwss.get_validator().expect("Unable to create validator");
 
         let jwt = Jws {

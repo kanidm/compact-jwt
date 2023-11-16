@@ -3,7 +3,7 @@
 use crate::btreemap_empty;
 use crate::compact::{Jwk, JwsCompact, JwsInner};
 #[cfg(feature = "openssl")]
-use crate::crypto::{JwsSigner, JwsValidator};
+use crate::crypto::{JwsSignerEnum, JwsValidatorEnum};
 #[cfg(feature = "openssl")]
 use url::Url;
 
@@ -122,7 +122,7 @@ where
 {
     fn sign_inner(
         &self,
-        signer: &JwsSigner,
+        signer: &JwsSignerEnum,
         jku: Option<Url>,
         jwk: Option<Jwk>,
     ) -> Result<JwtSigned, JwtError> {
@@ -139,12 +139,12 @@ where
     }
 
     /// Use this private signer to created a signed jwt.
-    pub fn sign(&self, signer: &JwsSigner) -> Result<JwtSigned, JwtError> {
+    pub fn sign(&self, signer: &JwsSignerEnum) -> Result<JwtSigned, JwtError> {
         self.sign_inner(signer, None, None)
     }
 
     /// Use this to create a signed jwt that includes the public key used in the signing process
-    pub fn sign_embed_public_jwk(&self, signer: &JwsSigner) -> Result<JwtSigned, JwtError> {
+    pub fn sign_embed_public_jwk(&self, signer: &JwsSignerEnum) -> Result<JwtSigned, JwtError> {
         let jwk = signer.public_key_as_jwk()?;
         self.sign_inner(signer, None, Some(jwk))
     }
@@ -152,9 +152,9 @@ where
 
 #[cfg(feature = "openssl")]
 impl JwtUnverified {
-    /// Using this JwsValidator, assert the correct signature of the data contained in
+    /// Using this JwsValidatorEnum, assert the correct signature of the data contained in
     /// this jwt.
-    pub fn validate<V>(&self, validator: &JwsValidator) -> Result<Jwt<V>, JwtError>
+    pub fn validate<V>(&self, validator: &JwsValidatorEnum) -> Result<Jwt<V>, JwtError>
     where
         V: Clone + serde::de::DeserializeOwned,
     {
@@ -210,7 +210,7 @@ impl fmt::Display for JwtSigned {
 #[cfg(all(feature = "openssl", test))]
 mod tests {
     use super::{Jwt, JwtUnverified};
-    use crate::crypto::{JwsSigner, JwsValidator};
+    use crate::crypto::{JwsSignerEnum, JwsValidatorEnum};
     use serde::{Deserialize, Serialize};
     use std::convert::TryFrom;
     use std::str::FromStr;
@@ -228,9 +228,9 @@ mod tests {
             ..Default::default()
         };
 
-        let jwss = JwsSigner::generate_es256().expect("failed to construct signer.");
+        let jwss = JwsSignerEnum::generate_es256().expect("failed to construct signer.");
         let pub_jwk = jwss.public_key_as_jwk().unwrap();
-        let jws_validator = JwsValidator::try_from(&pub_jwk).expect("Unable to create validator");
+        let jws_validator = JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
 
         let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
 
@@ -269,9 +269,9 @@ mod tests {
             ..Default::default()
         };
 
-        let jwss = JwsSigner::generate_es256().expect("failed to construct signer.");
+        let jwss = JwsSignerEnum::generate_es256().expect("failed to construct signer.");
         let pub_jwk = jwss.public_key_as_jwk().unwrap();
-        let jws_validator = JwsValidator::try_from(&pub_jwk).expect("Unable to create validator");
+        let jws_validator = JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
 
         let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
 

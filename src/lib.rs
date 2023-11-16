@@ -18,7 +18,7 @@
 //! use std::convert::TryFrom;
 //! use std::time::SystemTime;
 //! use url::Url;
-//! use compact_jwt::{JwsValidator, JwsSigner, OidcToken, OidcSubject, OidcUnverified};
+//! use compact_jwt::{JwsValidatorEnum, JwsSignerEnum, OidcToken, OidcSubject, OidcUnverified};
 //!
 //! let oidc = OidcToken {
 //!         iss: Url::parse("https://oidc.example.com").unwrap(),
@@ -38,7 +38,7 @@
 //! #       claims: Default::default(),
 //!     };
 //!
-//! let jws_signer = JwsSigner::generate_es256()
+//! let jws_signer = JwsSignerEnum::generate_es256()
 //!     .unwrap();
 //!
 //! let oidc_signed = oidc.sign(&jws_signer)
@@ -51,7 +51,7 @@
 //! // you would get this public jwk from the oidc authorisation server.
 //! let public_jwk = jws_signer.public_key_as_jwk()
 //!     .unwrap();
-//! let jws_validator = JwsValidator::try_from(&public_jwk)
+//! let jws_validator = JwsValidatorEnum::try_from(&public_jwk)
 //!     .unwrap();
 //!
 //! // Assuming we have the token_str, start to validate it.
@@ -88,7 +88,7 @@ pub mod oidc;
 
 pub use crate::compact::{JwaAlg, Jwk, JwkKeySet, JwkUse};
 #[cfg(feature = "openssl")]
-pub use crate::crypto::{JwsSigner, JwsValidator};
+pub use crate::crypto::{JwsSignerEnum, JwsValidatorEnum};
 pub use crate::error::JwtError;
 pub use crate::jws::{Jws, JwsSigned, JwsUnverified};
 pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};
