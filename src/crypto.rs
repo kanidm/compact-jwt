@@ -92,11 +92,12 @@ pub enum JwkUse {
     Enc,
 }
 
-#[derive(Debug, Serialize, Copy, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Copy, Clone, Deserialize, PartialEq, Default)]
 #[allow(non_camel_case_types)]
 /// Cryptographic algorithm
 pub enum JwaAlg {
     /// ECDSA with P-256 and SHA256
+    #[default]
     ES256,
     /// RSASSA-PKCS1-v1_5 with SHA-256
     RS256,
@@ -243,7 +244,7 @@ impl JwsValidator {
     }
 }
 
-#[derive(Debug, Serialize, Clone, Deserialize)]
+#[derive(Debug, Serialize, Clone, Deserialize, Default)]
 struct ProtectedHeader {
     alg: JwaAlg,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -294,29 +295,9 @@ impl fmt::Debug for JwsCompact {
 }
 
 #[derive(Debug, Clone)]
-struct Header {
-    #[allow(dead_code)]
-    kid: Option<String>,
-    #[allow(dead_code)]
-    typ: Option<String>,
-    #[allow(dead_code)]
-    cty: Option<String>,
-}
-
-impl From<&ProtectedHeader> for Header {
-    fn from(phdr: &ProtectedHeader) -> Self {
-        Header {
-            kid: phdr.kid.clone(),
-            typ: phdr.typ.clone(),
-            cty: phdr.cty.clone(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub(crate) struct JwsInner {
     #[allow(dead_code)]
-    header: Header,
+    header: ProtectedHeader,
     #[allow(dead_code)]
     payload: Vec<u8>,
 }
@@ -325,11 +306,7 @@ pub(crate) struct JwsInner {
 impl JwsInner {
     pub fn new(payload: Vec<u8>) -> Self {
         JwsInner {
-            header: Header {
-                kid: None,
-                typ: None,
-                cty: None,
-            },
+            header: ProtectedHeader::default(),
             payload,
         }
     }
@@ -376,19 +353,11 @@ impl JwsInner {
             JwsSigner::HS256 { .. } => JwaAlg::HS256,
         };
 
-        let header = ProtectedHeader {
-            alg,
-            jku,
-            jwk,
-            kid: self.header.kid.clone(),
-            typ: self.header.typ.clone(),
-            cty: self.header.cty.clone(),
-            crit: None,
-            x5u: None,
-            x5c: None,
-            x5t: None,
-            x5t_s256: None,
-        };
+        let mut header = self.header.clone();
+        // Update the alg with what we have been requested to sign with.
+        header.alg = alg;
+        header.jku = jku;
+        header.jwk = jwk;
 
         let payload = self.payload.clone();
 
@@ -591,7 +560,7 @@ impl JwsCompact {
                     JwtError::OpenSSLError
                 })? {
                     Ok(JwsInner {
-                        header: (&self.header).into(),
+                        header: self.header.clone(),
                         payload: self.payload.clone(),
                     })
                 } else {
@@ -639,7 +608,7 @@ impl JwsCompact {
                     .and_then(|res| {
                         if res {
                             Ok(JwsInner {
-                                header: (&self.header).into(),
+                                header: self.header.clone(),
                                 payload: self.payload.clone(),
                             })
                         } else {
@@ -668,7 +637,7 @@ impl JwsCompact {
 
                 if self.signature == ver_sig {
                     Ok(JwsInner {
-                        header: (&self.header).into(),
+                        header: self.header.clone(),
                         payload: self.payload.clone(),
                     })
                 } else {
