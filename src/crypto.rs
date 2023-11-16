@@ -281,7 +281,6 @@ pub(crate) struct JwsCompact {
     header: ProtectedHeader,
     hdr_b64: String,
     payload_b64: String,
-    // payload: Vec<u8>,
     signature: Vec<u8>,
 }
 
@@ -289,7 +288,7 @@ impl fmt::Debug for JwsCompact {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("JwsCompact")
             .field("header", &self.header)
-            .field("payload", &self.payload.len())
+            .field("payload", &self.payload_b64)
             .finish()
     }
 }
@@ -358,8 +357,6 @@ impl JwsInner {
         header.alg = alg;
         header.jku = jku;
         header.jwk = jwk;
-
-        let payload = self.payload.clone();
 
         let hdr_b64 = serde_json::to_vec(&header)
             .map_err(|e| {
@@ -480,7 +477,6 @@ impl JwsInner {
         Ok(JwsCompact {
             header,
             hdr_b64,
-            payload,
             payload_b64,
             signature,
         })
@@ -602,10 +598,16 @@ impl JwsCompact {
                     debug!(?e);
                     JwtError::OpenSSLError
                 })? {
-                    Ok(JwsInner {
-                        header: self.header.clone(),
-                        payload: self.payload.clone(),
-                    })
+                    general_purpose::URL_SAFE_NO_PAD
+                        .decode(&self.payload_b64)
+                        .map_err(|_| {
+                            debug!("invalid base64");
+                            JwtError::InvalidBase64
+                        })
+                        .map(|payload| JwsInner {
+                            header: self.header.clone(),
+                            payload,
+                        })
                 } else {
                     debug!("invalid signature");
                     Err(JwtError::InvalidSignature)
@@ -655,10 +657,16 @@ impl JwsCompact {
                     })
                     .and_then(|res| {
                         if res {
-                            Ok(JwsInner {
-                                header: self.header.clone(),
-                                payload: self.payload.clone(),
-                            })
+                            general_purpose::URL_SAFE_NO_PAD
+                                .decode(&self.payload_b64)
+                                .map_err(|_| {
+                                    debug!("invalid base64");
+                                    JwtError::InvalidBase64
+                                })
+                                .map(|payload| JwsInner {
+                                    header: self.header.clone(),
+                                    payload,
+                                })
                         } else {
                             debug!("invalid signature");
                             Err(JwtError::InvalidSignature)
@@ -693,10 +701,16 @@ impl JwsCompact {
                 })?;
 
                 if self.signature == ver_sig {
-                    Ok(JwsInner {
-                        header: self.header.clone(),
-                        payload: self.payload.clone(),
-                    })
+                    general_purpose::URL_SAFE_NO_PAD
+                        .decode(&self.payload_b64)
+                        .map_err(|_| {
+                            debug!("invalid base64");
+                            JwtError::InvalidBase64
+                        })
+                        .map(|payload| JwsInner {
+                            header: self.header.clone(),
+                            payload,
+                        })
                 } else {
                     debug!("invalid signature");
                     Err(JwtError::InvalidSignature)
@@ -785,13 +799,6 @@ impl FromStr for JwsCompact {
             return Err(JwtError::InvalidCompactFormat);
         }
 
-        let payload = general_purpose::URL_SAFE_NO_PAD
-            .decode(payload_str)
-            .map_err(|_| {
-                debug!("invalid base64");
-                JwtError::InvalidBase64
-            })?;
-
         let payload_b64 = payload_str.to_string();
 
         let signature = general_purpose::URL_SAFE_NO_PAD
@@ -804,7 +811,6 @@ impl FromStr for JwsCompact {
         Ok(JwsCompact {
             header,
             hdr_b64,
-            payload,
             payload_b64,
             signature,
         })
@@ -813,15 +819,8 @@ impl FromStr for JwsCompact {
 
 impl fmt::Display for JwsCompact {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let hdr = serde_json::to_vec(&self.header)
-            .map_err(|e| {
-                debug!(?e, "unable to serialise to json");
-                fmt::Error
-            })
-            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(bytes))?;
-        let payload = general_purpose::URL_SAFE_NO_PAD.encode(&self.payload);
         let sig = general_purpose::URL_SAFE_NO_PAD.encode(&self.signature);
-        write!(f, "{}.{}.{}", hdr, payload, sig)
+        write!(f, "{}.{}.{}", self.hdr_b64, self.payload_b64, sig)
     }
 }
 
