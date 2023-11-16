@@ -279,10 +279,10 @@ struct ProtectedHeader {
 #[derive(Clone)]
 pub(crate) struct JwsCompact {
     header: ProtectedHeader,
+    hdr_b64: String,
+    payload_b64: String,
     payload: Vec<u8>,
     signature: Vec<u8>,
-    #[cfg(feature = "openssl")]
-    sign_input: Vec<u8>,
 }
 
 impl fmt::Debug for JwsCompact {
@@ -369,12 +369,6 @@ impl JwsInner {
             .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(&bytes))?;
         let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(&self.payload);
 
-        // trace!("sinput -> {}", format!("{}.{}", hdr_b64, payload_b64));
-
-        let sign_input = format!("{}.{}", hdr_b64, payload_b64).as_bytes().to_vec();
-
-        // trace!("sinput -> {:?}", sign_input);
-
         // Compute the signature!
         let signature = match signer {
             JwsSigner::ES256 {
@@ -382,10 +376,25 @@ impl JwsInner {
                 skey,
                 digest,
             } => {
-                let hashout = hash::hash(*digest, &sign_input).map_err(|e| {
+                let mut hasher = hash::Hasher::new(*digest).map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError
                 })?;
+
+                hasher
+                    .update(hdr_b64.as_bytes())
+                    .and_then(|_| hasher.update(".".as_bytes()))
+                    .and_then(|_| hasher.update(payload_b64.as_bytes()))
+                    .map_err(|e| {
+                        debug!(?e);
+                        JwtError::OpenSSLError
+                    })?;
+
+                let hashout = hasher.finish().map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
+
                 let ec_sig = ecdsa::EcdsaSig::sign(&hashout, skey).map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError
@@ -428,7 +437,16 @@ impl JwsInner {
                     JwtError::OpenSSLError
                 })?;
 
-                signer.sign_oneshot_to_vec(&sign_input).map_err(|e| {
+                signer
+                    .update(hdr_b64.as_bytes())
+                    .and_then(|_| signer.update(".".as_bytes()))
+                    .and_then(|_| signer.update(payload_b64.as_bytes()))
+                    .map_err(|e| {
+                        debug!(?e);
+                        JwtError::OpenSSLError
+                    })?;
+
+                signer.sign_to_vec().map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError
                 })?
@@ -443,7 +461,16 @@ impl JwsInner {
                     JwtError::OpenSSLError
                 })?;
 
-                signer.sign_oneshot_to_vec(&sign_input).map_err(|e| {
+                signer
+                    .update(hdr_b64.as_bytes())
+                    .and_then(|_| signer.update(".".as_bytes()))
+                    .and_then(|_| signer.update(payload_b64.as_bytes()))
+                    .map_err(|e| {
+                        debug!(?e);
+                        JwtError::OpenSSLError
+                    })?;
+
+                signer.sign_to_vec().map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError
                 })?
@@ -452,8 +479,9 @@ impl JwsInner {
 
         Ok(JwsCompact {
             header,
+            hdr_b64,
             payload,
-            sign_input,
+            payload_b64,
             signature,
         })
     }
@@ -470,7 +498,8 @@ impl JwsInner {
 impl JwsCompact {
     #[cfg(test)]
     fn check_vectors(&self, chk_input: &[u8], chk_sig: &[u8]) -> bool {
-        chk_input == &self.sign_input && chk_sig == &self.signature
+        let sign_input = format!("{}.{}", self.hdr_b64, self.payload_b64);
+        chk_input == sign_input.as_bytes() && chk_sig == &self.signature
     }
 
     pub fn get_x5c_pubkey(&self) -> Result<Option<x509::X509>, JwtError> {
@@ -550,7 +579,21 @@ impl JwsCompact {
                     JwtError::OpenSSLError
                 })?;
 
-                let hashout = hash::hash(*digest, &self.sign_input).map_err(|e| {
+                let mut hasher = hash::Hasher::new(*digest).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
+
+                hasher
+                    .update(self.hdr_b64.as_bytes())
+                    .and_then(|_| hasher.update(".".as_bytes()))
+                    .and_then(|_| hasher.update(self.payload_b64.as_bytes()))
+                    .map_err(|e| {
+                        debug!(?e);
+                        JwtError::OpenSSLError
+                    })?;
+
+                let hashout = hasher.finish().map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError
                 })?;
@@ -595,10 +638,15 @@ impl JwsCompact {
                     JwtError::OpenSSLError
                 })?;
 
-                verifier.update(&self.sign_input).map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })?;
+                verifier
+                    .update(self.hdr_b64.as_bytes())
+                    .and_then(|_| verifier.update(".".as_bytes()))
+                    .and_then(|_| verifier.update(self.payload_b64.as_bytes()))
+                    .map_err(|e| {
+                        debug!(?e);
+                        JwtError::OpenSSLError
+                    })?;
+
                 verifier
                     .verify(&self.signature)
                     .map_err(|e| {
@@ -630,7 +678,16 @@ impl JwsCompact {
                     JwtError::OpenSSLError
                 })?;
 
-                let ver_sig = signer.sign_oneshot_to_vec(&self.sign_input).map_err(|e| {
+                signer
+                    .update(self.hdr_b64.as_bytes())
+                    .and_then(|_| signer.update(".".as_bytes()))
+                    .and_then(|_| signer.update(self.payload_b64.as_bytes()))
+                    .map_err(|e| {
+                        debug!(?e);
+                        JwtError::OpenSSLError
+                    })?;
+
+                let ver_sig = signer.sign_to_vec().map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError
                 })?;
@@ -700,6 +757,8 @@ impl FromStr for JwsCompact {
                 })
             })?;
 
+        let hdr_b64 = hdr_str.to_string();
+
         // Assert that from the critical field of the header, we have decoded all the needed types.
         // Remember, anything in rfc7515 can NOT be in the crit field.
         if let Some(crit) = &header.crit {
@@ -733,6 +792,8 @@ impl FromStr for JwsCompact {
                 JwtError::InvalidBase64
             })?;
 
+        let payload_b64 = payload_str.to_string();
+
         let signature = general_purpose::URL_SAFE_NO_PAD
             .decode(sig_str)
             .map_err(|_| {
@@ -740,22 +801,12 @@ impl FromStr for JwsCompact {
                 JwtError::InvalidBase64
             })?;
 
-        #[cfg(feature = "openssl")]
-        let sign_input = {
-            let (data_input, _) = s.rsplit_once(".").ok_or_else(|| {
-                debug!("invalid compact format - unable to parse sign input");
-                JwtError::InvalidCompactFormat
-            })?;
-            debug_assert!(data_input == &format!("{}.{}", hdr_str, payload_str));
-            data_input.as_bytes().to_vec()
-        };
-
         Ok(JwsCompact {
             header,
+            hdr_b64,
             payload,
+            payload_b64,
             signature,
-            #[cfg(feature = "openssl")]
-            sign_input,
         })
     }
 }
