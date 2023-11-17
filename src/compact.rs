@@ -95,7 +95,7 @@ pub enum JwaAlg {
 }
 
 #[derive(Debug, Serialize, Clone, Deserialize, Default)]
-pub(crate) struct ProtectedHeader {
+pub struct ProtectedHeader {
     pub(crate) alg: JwaAlg,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) jku: Option<Url>,
@@ -144,7 +144,7 @@ impl fmt::Debug for JwsCompact {
 }
 
 #[derive(Debug, Clone)]
-pub struct JwsInner {
+pub struct Jws {
     #[allow(dead_code)]
     pub(crate) header: ProtectedHeader,
     #[allow(dead_code)]
@@ -152,7 +152,7 @@ pub struct JwsInner {
 }
 
 #[cfg(any(feature = "openssl", feature = "unsafe_release_without_verify"))]
-impl JwsInner {
+impl Jws {
     pub(crate) fn payload(&self) -> &[u8] {
         &self.payload
     }
@@ -171,15 +171,6 @@ impl JwsCompact {
     #[allow(dead_code)]
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
         self.header.jwk.as_ref()
-    }
-
-    #[cfg(feature = "unsafe_release_without_verify")]
-    pub(crate) fn release_without_verification(&self) -> Result<JwsInner, JwtError> {
-        warn!("UNSAFE RELEASE OF JWT WAS PERFORMED");
-        Ok(JwsInner {
-            header: (&self.header).into(),
-            payload: self.payload.clone(),
-        })
     }
 }
 

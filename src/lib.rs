@@ -82,17 +82,17 @@ pub mod crypto;
 pub mod compact;
 
 pub mod error;
-pub mod jws;
-pub mod jwt;
-pub mod oidc;
+// pub mod jws;
+// pub mod jwt;
+// pub mod oidc;
 
 pub use crate::compact::{JwaAlg, Jwk, JwkKeySet, JwkUse};
 #[cfg(feature = "openssl")]
 pub use crate::crypto::{JwsSignerEnum, JwsValidatorEnum};
 pub use crate::error::JwtError;
-pub use crate::jws::{Jws, JwsSigned, JwsUnverified};
-pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};
-pub use crate::oidc::{OidcClaims, OidcSigned, OidcSubject, OidcToken, OidcUnverified};
+// pub use crate::jws::{Jws, JwsSigned, JwsUnverified};
+// pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};
+// pub use crate::oidc::{OidcClaims, OidcSigned, OidcSubject, OidcToken, OidcUnverified};
 
 pub(crate) fn btreemap_empty(
     m: &std::collections::BTreeMap<String, serde_json::value::Value>,
