@@ -127,7 +127,7 @@ pub(crate) struct ProtectedHeader {
 }
 
 #[derive(Clone)]
-pub(crate) struct JwsCompact {
+pub struct JwsCompact {
     pub(crate) header: ProtectedHeader,
     pub(crate) hdr_b64: String,
     pub(crate) payload_b64: String,
@@ -144,7 +144,7 @@ impl fmt::Debug for JwsCompact {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct JwsInner {
+pub struct JwsInner {
     #[allow(dead_code)]
     pub(crate) header: ProtectedHeader,
     #[allow(dead_code)]

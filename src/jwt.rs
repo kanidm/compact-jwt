@@ -230,7 +230,8 @@ mod tests {
 
         let jwss = JwsSignerEnum::generate_es256().expect("failed to construct signer.");
         let pub_jwk = jwss.public_key_as_jwk().unwrap();
-        let jws_validator = JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
+        let jws_validator =
+            JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
 
         let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
 
@@ -271,7 +272,8 @@ mod tests {
 
         let jwss = JwsSignerEnum::generate_es256().expect("failed to construct signer.");
         let pub_jwk = jwss.public_key_as_jwk().unwrap();
-        let jws_validator = JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
+        let jws_validator =
+            JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
 
         let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
 

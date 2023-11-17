@@ -262,7 +262,8 @@ mod tests {
         let _ = tracing_subscriber::fmt::try_init();
         let jwss = JwsSignerEnum::generate_es256().expect("failed to construct signer.");
         let pub_jwk = jwss.public_key_as_jwk().unwrap();
-        let jws_validator = JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
+        let jws_validator =
+            JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
 
         let jwt = Jws {
             inner: CustomExtension {

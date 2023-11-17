@@ -116,7 +116,11 @@ pub struct OidcToken {
 
 #[cfg(feature = "openssl")]
 impl OidcToken {
-    fn sign_inner(&self, signer: &JwsSignerEnum, kid: Option<&str>) -> Result<OidcSigned, JwtError> {
+    fn sign_inner(
+        &self,
+        signer: &JwsSignerEnum,
+        kid: Option<&str>,
+    ) -> Result<OidcSigned, JwtError> {
         // We need to convert this payload to a set of bytes.
         trace!(
             "✅ {}",
@@ -166,7 +170,11 @@ impl OidcUnverified {
     /// Using this JwsValidatorEnum, assert the correct signature of the data contained in
     /// this token. The current time is represented by seconds since the epoch. You may
     /// choose to ignore exp validation by setting this to 0, but this is DANGEROUS.
-    pub fn validate(&self, validator: &JwsValidatorEnum, curtime: i64) -> Result<OidcToken, JwtError> {
+    pub fn validate(
+        &self,
+        validator: &JwsValidatorEnum,
+        curtime: i64,
+    ) -> Result<OidcToken, JwtError> {
         let released = self.jwsc.validate(validator)?;
 
         let tok: OidcToken =
@@ -265,7 +273,8 @@ mod tests {
 
         let jwss = JwsSignerEnum::generate_es256().expect("failed to construct signer.");
         let pub_jwk = jwss.public_key_as_jwk().unwrap();
-        let jws_validator = JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
+        let jws_validator =
+            JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
 
         let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
 
@@ -301,7 +310,8 @@ mod tests {
 
         let jwss = JwsSignerEnum::generate_es256().expect("failed to construct signer.");
         let pub_jwk = jwss.public_key_as_jwk().unwrap();
-        let jws_validator = JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
+        let jws_validator =
+            JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
 
         let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
 
