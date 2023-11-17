@@ -87,8 +87,6 @@ pub mod error;
 // pub mod oidc;
 
 pub use crate::compact::{JwaAlg, Jwk, JwkKeySet, JwkUse};
-#[cfg(feature = "openssl")]
-pub use crate::crypto::{JwsSignerEnum, JwsValidatorEnum};
 pub use crate::error::JwtError;
 // pub use crate::jws::{Jws, JwsSigned, JwsUnverified};
 // pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};
