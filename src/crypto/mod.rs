@@ -1497,7 +1497,34 @@ impl JwsSigner for JwsRs256Signer {
     }
 
     fn sign(&mut self, jwsc: JwsCompactSignData<'_>) -> Result<Vec<u8>, JwtError> {
-        todo!();
+                let key = pkey::PKey::from_rsa(self.skey.clone()).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
+
+                let mut signer = sign::Signer::new(self.digest, &key).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
+
+                signer.set_rsa_padding(rsa::Padding::PKCS1).map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?;
+
+                signer
+                    .update(jwsc.hdr_bytes)
+                    .and_then(|_| signer.update(".".as_bytes()))
+                    .and_then(|_| signer.update(jwsc.payload_bytes))
+                    .map_err(|e| {
+                        debug!(?e);
+                        JwtError::OpenSSLError
+                    })?;
+
+                signer.sign_to_vec().map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })
     }
 }
 
