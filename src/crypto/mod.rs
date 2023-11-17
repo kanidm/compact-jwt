@@ -1206,7 +1206,17 @@ impl JwsSignerToVerifier for JwsEs256Signer {
     type Verifier = JwsEs256Verifier;
 
     fn get_verifier(&mut self) -> Result<Self::Verifier, JwtError> {
-        todo!();
+        ec::EcKey::from_public_key(self.skey.group(), self.skey.public_key())
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            })
+            .map_err(|_| JwtError::OpenSSLError)
+            .map(|pkey| JwsEs256Verifier {
+                kid: Some(self.kid.clone()),
+                pkey,
+                digest: self.digest,
+            })
     }
 }
 
@@ -1497,34 +1507,34 @@ impl JwsSigner for JwsRs256Signer {
     }
 
     fn sign(&mut self, jwsc: JwsCompactSignData<'_>) -> Result<Vec<u8>, JwtError> {
-                let key = pkey::PKey::from_rsa(self.skey.clone()).map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })?;
+        let key = pkey::PKey::from_rsa(self.skey.clone()).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
 
-                let mut signer = sign::Signer::new(self.digest, &key).map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })?;
+        let mut signer = sign::Signer::new(self.digest, &key).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
 
-                signer.set_rsa_padding(rsa::Padding::PKCS1).map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })?;
+        signer.set_rsa_padding(rsa::Padding::PKCS1).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
 
-                signer
-                    .update(jwsc.hdr_bytes)
-                    .and_then(|_| signer.update(".".as_bytes()))
-                    .and_then(|_| signer.update(jwsc.payload_bytes))
-                    .map_err(|e| {
-                        debug!(?e);
-                        JwtError::OpenSSLError
-                    })?;
+        signer
+            .update(jwsc.hdr_bytes)
+            .and_then(|_| signer.update(".".as_bytes()))
+            .and_then(|_| signer.update(jwsc.payload_bytes))
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            })?;
 
-                signer.sign_to_vec().map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })
+        signer.sign_to_vec().map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })
     }
 }
 
@@ -1915,7 +1925,6 @@ mod tests {
 
         // This time we'll add the jwk pubkey and show it being used with the validator.
         let jws = Jws::new(vec![0, 1, 2, 3, 4])
-            .set_kid("abcd".to_string())
             .set_typ("abcd".to_string())
             .set_cty("abcd".to_string());
 
@@ -1924,7 +1933,6 @@ mod tests {
         let jwsc = jws.sign(&mut jws_rs256_signer).expect("Failed to sign");
 
         assert!(jwsc.get_jwk_pubkey_url().is_none());
-        assert!(jwsc.get_jwk_kid() == Some("abcd"));
 
         let pub_jwk = jwsc.get_jwk_pubkey().expect("No embeded public jwk!");
         assert!(*pub_jwk == jws_rs256_signer.public_key_as_jwk().unwrap());
