@@ -82,7 +82,7 @@ pub mod crypto;
 pub mod compact;
 
 pub mod error;
-// pub mod jws;
+pub mod jws;
 // pub mod jwt;
 // pub mod oidc;
 

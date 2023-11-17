@@ -25,162 +25,26 @@ pub struct JwsSigned {
 }
 
 /// A Jws that is being created or has succeeded in being validated
-#[derive(Serialize, Clone, Deserialize)]
-pub struct Jws<V>
-where
-    V: Clone,
-{
-    /// These are the fields that this JWT will contain.
-    #[serde(flatten)]
-    inner: V,
+#[derive(Debug, Clone)]
+pub struct Jws {
+    #[allow(dead_code)]
+    pub(crate) header: ProtectedHeader,
+    #[allow(dead_code)]
+    pub(crate) payload: Vec<u8>,
 }
 
-impl<V> Default for Jws<V>
-where
-    V: Clone + Default,
-{
-    fn default() -> Self {
-        Jws {
-            inner: V::default(),
-        }
-    }
-}
-
-impl<V> Jws<V>
-where
-    V: Clone,
-{
-    /// Construct a new Jws containing an inner struct
-    pub fn new(inner: V) -> Self {
-        Jws { inner: inner }
-    }
-}
-
-impl<V> AsRef<V> for Jws<V>
-where
-    V: Clone,
-{
-    fn as_ref(&self) -> &V {
-        &self.inner
-    }
-}
-
-impl<V> AsMut<V> for Jws<V>
-where
-    V: Clone,
-{
-    fn as_mut(&mut self) -> &mut V {
-        &mut self.inner
-    }
-}
-
-impl<V> fmt::Debug for Jws<V>
-where
-    V: Clone + fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Jws").field("inner", &self.inner).finish()
-    }
-}
-
-impl<V> PartialEq for Jws<V>
-where
-    V: Clone + PartialEq,
-{
-    fn eq(&self, other: &Jws<V>) -> bool {
-        self.inner == other.inner
-    }
-}
-
-#[cfg(feature = "openssl")]
-impl<V> Jws<V>
-where
-    V: Clone + Serialize,
-{
-    fn sign_inner(
-        &self,
-        signer: &JwsSignerEnum,
-        jku: Option<Url>,
-        jwk: Option<Jwk>,
-    ) -> Result<JwsSigned, JwtError> {
-        // We need to convert this payload to a set of bytes.
-        // eprintln!("{:?}", serde_json::to_string(&self));
-        let payload = serde_json::to_vec(&self).map_err(|e| {
-            error!(?e, "Invalid Jws - Serde Error");
-            JwtError::InvalidJwt
-        })?;
-
-        let jws = JwsInner::new(payload)
-            .set_kid(signer.get_kid().to_string())
-            .set_typ("JWT".to_string());
-
-        jws.sign_inner(signer, jku, jwk)
-            .map(|jwsc| JwsSigned { jwsc })
-    }
-
-    /// Use this private signer to created a signed jwt.
-    pub fn sign(&self, signer: &JwsSignerEnum) -> Result<JwsSigned, JwtError> {
-        self.sign_inner(signer, None, None)
-    }
-
-    /// Use this to create a signed jwt that includes the public key used in the signing process
-    pub fn sign_embed_public_jwk(&self, signer: &JwsSignerEnum) -> Result<JwsSigned, JwtError> {
-        let jwk = signer.public_key_as_jwk()?;
-        self.sign_inner(signer, None, Some(jwk))
-    }
-}
-
-impl<V> Jws<V>
-where
-    V: Clone + Serialize,
-{
-    /// Move the inner value out of this jws.
-    pub fn into_inner(self) -> V {
-        self.inner
+impl Jws {
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
     }
 }
 
 #[cfg(feature = "openssl")]
 impl JwsUnverified {
-    /// Using this JwsValidatorEnum, assert the correct signature of the data contained in
+    /// Using this [JwsVerifier], assert the correct signature of the data contained in
     /// this jwt.
-    pub fn validate<V>(&self, validator: &JwsValidatorEnum) -> Result<Jws<V>, JwtError>
-    where
-        V: Clone + serde::de::DeserializeOwned,
-    {
-        let released = self.jwsc.validate(validator)?;
-
-        serde_json::from_slice(released.payload()).map_err(|e| {
-            error!(?e, "Invalid Jws - Serde Error");
-            JwtError::InvalidJwt
-        })
-    }
-
-    /// Using the internal public keys of the Jws, validate and release the content
-    /// within.
-    pub fn validate_embeded<V>(&self) -> Result<Jws<V>, JwtError>
-    where
-        V: Clone + serde::de::DeserializeOwned,
-    {
-        // If possible, validate using the embedded JWK
-        let pub_jwk = self.get_jwk_pubkey();
-        let pub_x5c = self.get_x5c_pubkey();
-        let jwsv = match (pub_jwk, pub_x5c) {
-            (None, Ok(None)) => {
-                debug!("embeded jwk not available");
-                Err(JwtError::EmbededJwkNotAvailable)
-            }
-            // fix this error
-            (Some(_), Ok(Some(_)) | Err(_)) => {
-                debug!("private key denied - multiple trust chains available");
-                Err(JwtError::PrivateKeyDenied)
-            }
-            (None, Err(err)) => Err(err),
-            (Some(jwk), Ok(None)) => jwk.try_into(),
-            (None, Ok(Some(x5c))) => x5c.try_into(),
-        }?;
-
-        self.validate(&jwsv)
+    pub fn verify<K: JwsVerifier>(&self, verifier: &mut K) -> Result<Jws, JwtError> {
+        self.jwsc.verify(verifier)
     }
 
     /// Get the embedded public key used to sign this jwt, if present.

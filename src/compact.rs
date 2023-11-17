@@ -143,21 +143,6 @@ impl fmt::Debug for JwsCompact {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Jws {
-    #[allow(dead_code)]
-    pub(crate) header: ProtectedHeader,
-    #[allow(dead_code)]
-    pub(crate) payload: Vec<u8>,
-}
-
-#[cfg(any(feature = "openssl", feature = "unsafe_release_without_verify"))]
-impl Jws {
-    pub(crate) fn payload(&self) -> &[u8] {
-        &self.payload
-    }
-}
-
 impl JwsCompact {
     pub fn get_jwk_kid(&self) -> Option<&str> {
         self.header.kid.as_deref()
