@@ -99,11 +99,16 @@ pub mod jws;
 pub mod jwt;
 pub mod oidc;
 
-// pub use crate::compact::{JwaAlg, Jwk, JwkKeySet, JwkUse};
-// pub use crate::error::JwtError;
-// pub use crate::jws::{Jws, JwsSigned, JwsUnverified};
-// pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};
-// pub use crate::oidc::{OidcClaims, OidcSigned, OidcSubject, OidcToken, OidcUnverified};
+#[cfg(feature = "openssl")]
+pub use crate::crypto::{JwsEs256Signer, JwsEs256Verifier, JwsHs256Signer};
+
+pub use crate::compact::{JwaAlg, Jwk};
+pub use crate::error::JwtError;
+pub use crate::jws::{Jws, JwsSigned, JwsUnverified};
+pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};
+pub use crate::oidc::{OidcClaims, OidcSigned, OidcSubject, OidcToken, OidcUnverified};
+
+pub use crate::traits::{JwsSigner, JwsSignerToVerifier, JwsVerifier};
 
 pub(crate) fn btreemap_empty(
     m: &std::collections::BTreeMap<String, serde_json::value::Value>,
