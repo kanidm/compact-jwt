@@ -117,6 +117,7 @@ impl<V> Jwt<V>
 where
     V: Clone + Serialize,
 {
+    /// Sign the content of this JWT token with the provided signer
     pub fn sign<S: JwsSigner>(&self, signer: &mut S) -> Result<JwtSigned, JwtError> {
         let mut jwts = Jws::into_json(self).map_err(|_| JwtError::InvalidJwt)?;
 
@@ -129,6 +130,8 @@ where
 }
 
 impl JwtUnverified {
+    /// Using this JwsVerifier, assert the correct signature of the data contained in
+    /// this token.
     pub fn verify<K, V>(&self, verifier: &mut K) -> Result<Jwt<V>, JwtError>
     where
         K: JwsVerifier,

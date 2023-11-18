@@ -96,6 +96,7 @@ pub enum JwaAlg {
     HS256,
 }
 
+/// A header that will be signed and embedded in the Jws
 #[derive(Debug, Serialize, Clone, Deserialize, Default, PartialEq)]
 pub struct ProtectedHeader {
     pub(crate) alg: JwaAlg,
@@ -128,6 +129,7 @@ pub struct ProtectedHeader {
     // Don't allow extra header names?
 }
 
+/// A Compact JWS that is able to be verified or stringified for transmission
 #[derive(Clone)]
 pub struct JwsCompact {
     pub(crate) header: ProtectedHeader,
@@ -146,20 +148,26 @@ impl fmt::Debug for JwsCompact {
 }
 
 impl JwsCompact {
+    /// Get the KID used to sign this Jws if present
     pub fn get_jwk_kid(&self) -> Option<&str> {
         self.header.kid.as_deref()
     }
 
-    #[allow(dead_code)]
+    /// Get the embedded Url for the Jwk that signed this Jws.
+    ///
+    /// You MUST ensure this url uses HTTPS and you MUST ensure that your
+    /// client validates the CA's used.
     pub fn get_jwk_pubkey_url(&self) -> Option<&Url> {
         self.header.jku.as_ref()
     }
 
-    #[allow(dead_code)]
+    /// Get the embedded public key used to sign this Jws, if present.
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
         self.header.jwk.as_ref()
     }
 
+    /// Using this JwsVerifier, assert the correct signature of the data contained in
+    /// this token.
     pub fn verify<K: JwsVerifier>(&self, verifier: &mut K) -> Result<Jws, JwtError> {
         if verifier.verify_signature(self)? {
             general_purpose::URL_SAFE_NO_PAD

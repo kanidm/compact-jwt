@@ -1,3 +1,5 @@
+//! JWS Signing and Verification Structures
+
 use openssl::{bn, ec, ecdsa, hash, nid, pkey, rand, rsa, sign, x509};
 use std::convert::TryFrom;
 
@@ -51,6 +53,8 @@ impl JwsCompact {
 }
 
 impl Jws {
+    /// Sign the content of this JWS with the provided signer, yielding a compact
+    /// signed string.
     pub fn sign<S: JwsSigner>(&self, signer: &mut S) -> Result<JwsCompact, JwtError> {
         let mut header = self.header.clone();
 
@@ -81,6 +85,7 @@ impl Jws {
     }
 }
 
+/// A JWS signer that creates ECDSA P-256 signatures.
 pub struct JwsEs256Signer {
     /// If the public jwk should be embeded during signing
     sign_option_embed_jwk: bool,
@@ -161,6 +166,8 @@ impl JwsEs256Signer {
         })
     }
 
+    /// Enable or disable embedding of the public jwk into the Jws that are signed
+    /// by this signer
     pub fn set_sign_option_embed_jwk(&mut self, value: bool) {
         self.sign_option_embed_jwk = value;
     }
@@ -221,6 +228,7 @@ impl JwsEs256Signer {
         })
     }
 
+    /// Get the public Jwk from this signer
     pub fn public_key_as_jwk(&self) -> Result<Jwk, JwtError> {
         let pkey = self.skey.public_key();
         let ec_group = self.skey.group();
@@ -353,6 +361,7 @@ impl JwsSigner for JwsEs256Signer {
     }
 }
 
+/// A JWS verifier that creates ECDSA P-256 signatures.
 pub struct JwsEs256Verifier {
     /// The KID of this validator
     kid: Option<String>,
@@ -470,6 +479,7 @@ impl JwsVerifier for JwsEs256Verifier {
     }
 }
 
+/// A JWS signer that creates RSA SHA256 signatures.
 pub struct JwsRs256Signer {
     /// If the public jwk should be embeded during signing
     sign_option_embed_jwk: bool,
@@ -482,6 +492,8 @@ pub struct JwsRs256Signer {
 }
 
 impl JwsRs256Signer {
+    /// Enable or disable embedding of the public jwk into the Jws that are signed
+    /// by this signer
     pub fn set_sign_option_embed_jwk(&mut self, value: bool) {
         self.sign_option_embed_jwk = value;
     }
@@ -540,6 +552,7 @@ impl JwsRs256Signer {
         })
     }
 
+    /// Get the public Jwk from this signer
     pub fn public_key_as_jwk(&self) -> Result<Jwk, JwtError> {
         let public_key_n = self.skey.n().to_vec_padded(RSA_SIG_SIZE).map_err(|e| {
             debug!(?e);
@@ -620,6 +633,7 @@ impl JwsSigner for JwsRs256Signer {
     }
 }
 
+/// A JWS verifier that creates RSA SHA256 signatures.
 pub struct JwsRs256Verifier {
     /// The KID of this validator
     kid: Option<String>,
@@ -740,6 +754,7 @@ impl JwsVerifier for JwsRs256Verifier {
     }
 }
 
+/// A JWS signer that creates HMAC SHA256 signatures.
 pub struct JwsHs256Signer {
     /// The KID of this signer. This is the sha256 digest of the key.
     kid: String,
@@ -874,6 +889,7 @@ impl JwsVerifier for JwsHs256Signer {
     }
 }
 
+/// A builder for a verifier that will be rooted in a trusted ca chain.
 #[derive(Default)]
 pub struct JwsX509VerifierBuilder {
     kid: Option<String>,
@@ -885,15 +901,18 @@ pub struct JwsX509VerifierBuilder {
 }
 
 impl JwsX509VerifierBuilder {
+    /// Create a new X509 Verifier Builder
     pub fn new() -> Self {
         JwsX509VerifierBuilder::default()
     }
 
+    #[cfg(test)]
     pub fn set_kid(mut self, kid: Option<&str>) -> Self {
         self.kid = kid.map(|s| s.to_string());
         self
     }
 
+    /// Add the CA trust roots that you trust to anchor signature chains.
     pub fn add_trust_root(mut self, root: x509::X509) -> Self {
         self.trust_roots.push(root);
         self
@@ -905,6 +924,11 @@ impl JwsX509VerifierBuilder {
         self
     }
 
+    /// Add the full chain of certificates to this verifier. The expected
+    /// Vec should start with the leaf certificate, and end with the root.
+    ///
+    /// By default, the x5c content of a Jws should have this in the correct
+    /// order.
     pub fn add_fullchain(mut self, mut chain: Vec<x509::X509>) -> Self {
         // Normally the chains are leaf -> root. We need to reverse it
         // so we can pop from the right.
@@ -917,6 +941,7 @@ impl JwsX509VerifierBuilder {
         self
     }
 
+    /// Build this X509 Verifier.
     pub fn build(self) -> Result<JwsX509Verifier, JwtError> {
         use openssl::stack;
         use openssl::x509::store;
@@ -1008,6 +1033,11 @@ impl JwsX509VerifierBuilder {
     }
 }
 
+/// A verifier for a Jws that is trusted by a certificate chain. This verifier represents the leaf
+/// certificate that will be used to verify a Jws.
+///
+/// If you have multiple trust roots and chains, you will need to build this verifier for each
+/// Jws that you need to validate since this type verifies a single leaf.
 pub struct JwsX509Verifier {
     /// The KID of this validator
     kid: Option<String>,

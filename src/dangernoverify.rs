@@ -1,7 +1,12 @@
+//! A dangerous verification type that allows bypassing cryptographic
+//! checking of the content of JWS tokens.
+
 use crate::compact::JwsCompact;
 use crate::error::JwtError;
 use crate::traits::JwsVerifier;
 
+/// A dangerous verification type that allows bypassing cryptographic
+/// checking of the content of JWS tokens.
 #[derive(Default)]
 pub struct JwsDangerReleaseWithoutVerify {}
 

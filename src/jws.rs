@@ -1,4 +1,4 @@
-//! Jws Implementation
+//! JWS Implementation
 
 use crate::compact::{Jwk, JwsCompact, ProtectedHeader};
 use crate::error::JwtError;
@@ -18,6 +18,7 @@ pub struct JwsSigned {
     pub(crate) jwsc: JwsCompact,
 }
 
+/// A builder to create a new JWS that can be signed
 pub struct JwsBuilder {
     pub(crate) header: ProtectedHeader,
     pub(crate) payload: Vec<u8>,
@@ -33,11 +34,13 @@ impl From<Vec<u8>> for JwsBuilder {
 }
 
 impl JwsBuilder {
+    /// Set the content type of this JWS
     pub fn set_typ(mut self, typ: Option<&str>) -> Self {
         self.header.typ = typ.map(|s| s.to_string());
         self
     }
 
+    /// Set the content type of the payload
     pub fn set_cty(mut self, cty: Option<&str>) -> Self {
         self.header.cty = cty.map(|s| s.to_string());
         self
@@ -55,6 +58,7 @@ impl JwsBuilder {
         self
     }
 
+    /// Finalise this builder
     pub fn build(self) -> Jws {
         let JwsBuilder { header, payload } = self;
         Jws { header, payload }
@@ -69,14 +73,13 @@ pub struct Jws {
 }
 
 impl Jws {
+    /// Get the bytes of the payload of this JWS
     pub fn payload(&self) -> &[u8] {
         &self.payload
     }
 
-    pub fn set_typ(&mut self, typ: Option<&str>) {
-        self.header.typ = typ.map(|s| s.to_string());
-    }
-
+    /// Create a JWS from a serialisable type. This assumes you want to encode
+    /// the input value with json.
     pub fn into_json<T: Serialize>(value: &T) -> Result<Jws, serde_json::Error> {
         serde_json::to_vec(value).map(|payload| Jws {
             header: ProtectedHeader::default(),
@@ -84,8 +87,13 @@ impl Jws {
         })
     }
 
+    /// Deserialise the inner payload of this JWS assuming it contains json.
     pub fn from_json<'a, T: Deserialize<'a>>(&'a self) -> Result<T, serde_json::Error> {
         serde_json::from_slice(self.payload())
+    }
+
+    pub(crate) fn set_typ(&mut self, typ: Option<&str>) {
+        self.header.typ = typ.map(|s| s.to_string());
     }
 }
 
@@ -98,8 +106,8 @@ impl JwsUnverified {
 }
 
 impl JwsUnverified {
-    /// Using this [JwsVerifier], assert the correct signature of the data contained in
-    /// this jwt.
+    /// Using this JwsVerifier, assert the correct signature of the data contained in
+    /// this token.
     pub fn verify<K: JwsVerifier>(&self, verifier: &mut K) -> Result<Jws, JwtError> {
         self.jwsc.verify(verifier)
     }

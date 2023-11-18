@@ -118,6 +118,7 @@ pub struct OidcToken {
 
 #[cfg(feature = "openssl")]
 impl OidcToken {
+    /// Sign the content of this OIDC token with the provided signer
     pub fn sign<S: JwsSigner>(&self, signer: &mut S) -> Result<OidcSigned, JwtError> {
         let mut jwts = Jws::into_json(self).map_err(|_| JwtError::InvalidJwt)?;
 
