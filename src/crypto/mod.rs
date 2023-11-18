@@ -11,7 +11,9 @@ use url::Url;
 use crate::error::JwtError;
 use base64urlsafedata::Base64UrlSafeData;
 
-use crate::compact::{EcCurve, JwaAlg, Jwk, JwkUse, Jws, JwsCompact, ProtectedHeader};
+use crate::compact::{EcCurve, JwaAlg, Jwk, JwkUse, JwsCompact, ProtectedHeader};
+use crate::jws::Jws;
+use crate::traits::*;
 
 const RSA_MIN_SIZE: u32 = 3072;
 const RSA_SIG_SIZE: i32 = 384;
@@ -23,28 +25,9 @@ impl JwsCompact {
         chk_input == sign_input.as_bytes() && chk_sig == &self.signature
     }
 
-    pub fn get_x5c_pubkey(&self) -> Result<Option<x509::X509>, JwtError> {
-        let fullchain = match &self.header.x5c {
-            Some(chain) => chain,
-            None => return Ok(None),
-        };
-
-        fullchain
-            .get(0)
-            .map(|value| {
-                general_purpose::STANDARD
-                    .decode(value)
-                    .map_err(|_| JwtError::InvalidBase64)
-                    .and_then(|bytes| {
-                        x509::X509::from_der(&bytes).map_err(|e| {
-                            debug!(?e);
-                            JwtError::OpenSSLError
-                        })
-                    })
-            })
-            .transpose()
-    }
-
+    /// The chain starts from the signing leaf and proceeds up the ca chain
+    /// toward the root.
+    ///
     /// return [Ok(None)] if the jws object's header's x5c field isn't populated
     pub fn get_x5c_chain(&self) -> Result<Option<Vec<x509::X509>>, JwtError> {
         let fullchain = match &self.header.x5c {
@@ -148,27 +131,6 @@ impl Jws {
             signature,
         })
     }
-}
-
-pub struct JwsCompactSignData<'a> {
-    pub(crate) hdr_bytes: &'a [u8],
-    pub(crate) payload_bytes: &'a [u8],
-}
-
-pub trait JwsSigner {
-    fn update_header(&mut self, header: &mut ProtectedHeader) -> Result<(), JwtError>;
-
-    fn sign(&mut self, jwsc: JwsCompactSignData<'_>) -> Result<Vec<u8>, JwtError>;
-}
-
-pub trait JwsSignerToVerifier {
-    type Verifier;
-
-    fn get_verifier(&mut self) -> Result<Self::Verifier, JwtError>;
-}
-
-pub trait JwsVerifier {
-    fn verify_signature(&mut self, jwsc: &JwsCompact) -> Result<bool, JwtError>;
 }
 
 pub struct JwsEs256Signer {
@@ -448,6 +410,7 @@ pub struct JwsEs256Verifier {
     digest: hash::MessageDigest,
 }
 
+/*
 impl TryFrom<x509::X509> for JwsEs256Verifier {
     type Error = JwtError;
 
@@ -469,6 +432,7 @@ impl TryFrom<x509::X509> for JwsEs256Verifier {
             })
     }
 }
+*/
 
 impl TryFrom<&Jwk> for JwsEs256Verifier {
     type Error = JwtError;
@@ -729,6 +693,7 @@ pub struct JwsRs256Verifier {
     digest: hash::MessageDigest,
 }
 
+/*
 impl TryFrom<x509::X509> for JwsRs256Verifier {
     type Error = JwtError;
 
@@ -750,6 +715,7 @@ impl TryFrom<x509::X509> for JwsRs256Verifier {
             })
     }
 }
+*/
 
 impl TryFrom<&Jwk> for JwsRs256Verifier {
     type Error = JwtError;
@@ -943,13 +909,48 @@ impl JwsVerifier for JwsHs256Signer {
     }
 }
 
+#[derive(Default)]
+pub struct JwsX509VerifierBuilder {
+    leaf: Option<x509::X509>,
+    chain: Vec<x509::X509>,
+    trust_roots: Vec<x509::X509>,
+}
+
+impl JwsX509VerifierBuilder {
+    pub fn new() -> Self {
+        JwsX509VerifierBuilder::default()
+    }
+
+    pub fn add_fullchain(mut self, chain: Vec<x509::X509>) -> Self {
+        todo!();
+    }
+
+    pub fn build(self) -> Result<JwsX509Verifier, JwtError> {
+        todo!();
+    }
+}
+
+pub struct JwsX509Verifier {
+    /// The KID of this validator
+    kid: Option<String>,
+    /// Public Key
+    pkey: x509::X509,
+}
+
+impl JwsVerifier for JwsX509Verifier {
+    fn verify_signature(&mut self, jwsc: &JwsCompact) -> Result<bool, JwtError> {
+        todo!();
+    }
+}
+
 #[cfg(all(feature = "openssl", test))]
 mod tests {
     use super::{
         JwsEs256Signer, JwsEs256Verifier, JwsHs256Signer, JwsRs256Signer, JwsRs256Verifier,
         JwsSignerToVerifier,
     };
-    use crate::compact::{Jwk, Jws, JwsCompact};
+    use crate::compact::{Jwk, JwsCompact};
+    use crate::jws::Jws;
     use base64::{engine::general_purpose, Engine as _};
     use std::convert::TryFrom;
     use std::str::FromStr;

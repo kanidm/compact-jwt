@@ -94,7 +94,7 @@ pub enum JwaAlg {
     HS256,
 }
 
-#[derive(Debug, Serialize, Clone, Deserialize, Default)]
+#[derive(Debug, Serialize, Clone, Deserialize, Default, PartialEq)]
 pub struct ProtectedHeader {
     pub(crate) alg: JwaAlg,
     #[serde(skip_serializing_if = "Option::is_none")]

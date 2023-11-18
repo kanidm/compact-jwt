@@ -1,7 +1,7 @@
 // #![deny(warnings)]
+// #![warn(unused_extern_crates)]
+// #![warn(missing_docs)]
 
-#![warn(unused_extern_crates)]
-#![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
 //! Json Web Tokens (JWT) are a popular method for creating signed transparent tokens that can be verified
@@ -79,7 +79,12 @@ extern crate tracing;
 #[cfg(feature = "openssl")]
 pub mod crypto;
 
+#[cfg(feature = "unsafe_release_without_verify")]
+pub mod dangernoverify;
+
 pub mod compact;
+
+pub mod traits;
 
 pub mod error;
 pub mod jws;
