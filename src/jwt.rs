@@ -118,7 +118,9 @@ where
     V: Clone + Serialize,
 {
     pub fn sign<S: JwsSigner>(&self, signer: &mut S) -> Result<JwtSigned, JwtError> {
-        let jwts = Jws::into_json(self).map_err(|_| JwtError::InvalidJwt)?;
+        let mut jwts = Jws::into_json(self).map_err(|_| JwtError::InvalidJwt)?;
+
+        jwts.set_typ(Some("JWT"));
 
         jwts.sign(signer).map(|jwsc| JwtSigned {
             jws: JwsSigned { jwsc },
