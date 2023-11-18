@@ -18,7 +18,16 @@
 //! use std::convert::TryFrom;
 //! use std::time::SystemTime;
 //! use url::Url;
-//! use compact_jwt::{JwsValidatorEnum, JwsSignerEnum, OidcToken, OidcSubject, OidcUnverified};
+//! use compact_jwt::{
+//!     OidcToken,
+//!     OidcSubject,
+//!     OidcUnverified,
+//!     JwsEs256Signer,
+//!     // Traits
+//!     JwsSigner,
+//!     JwsSignerToVerifier,
+//!     JwsVerifier,
+//! };
 //!
 //! let oidc = OidcToken {
 //!         iss: Url::parse("https://oidc.example.com").unwrap(),
@@ -38,10 +47,10 @@
 //! #       claims: Default::default(),
 //!     };
 //!
-//! let jws_signer = JwsSignerEnum::generate_es256()
-//!     .unwrap();
+//! let mut jws_es256_signer =
+//!     JwsEs256Signer::generate_es256().unwrap();
 //!
-//! let oidc_signed = oidc.sign(&jws_signer)
+//! let oidc_signed = oidc.sign(&mut jws_es256_signer)
 //!     .unwrap();
 //!
 //! // Get the signed formatted token string
@@ -49,12 +58,11 @@
 //!
 //! // Build a validator from the public key of the signer. In a client scenario
 //! // you would get this public jwk from the oidc authorisation server.
-//! let public_jwk = jws_signer.public_key_as_jwk()
-//!     .unwrap();
-//! let jws_validator = JwsValidatorEnum::try_from(&public_jwk)
-//!     .unwrap();
+//! let mut jwk_es256_verifier = jws_es256_signer
+//!     .get_verifier()
+//!     .expect("failed to get verifier from signer");
 //!
-//! // Assuming we have the token_str, start to validate it.
+//! // Assuming we have the token_str, we parse it to an unverified state.
 //! let oidc_unverified = OidcUnverified::from_str(&token_str)
 //!     .unwrap();
 //!
@@ -64,7 +72,7 @@
 //!     .as_secs() as i64;
 //!
 //! let oidc_validated = oidc_unverified
-//!     .validate(&jws_validator, curtime)
+//!     .verify(&mut jwk_es256_verifier, curtime)
 //!     .unwrap();
 //!
 //! // Prove we got back the same content.
