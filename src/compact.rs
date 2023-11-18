@@ -86,11 +86,11 @@ pub enum JwkUse {
 /// Cryptographic algorithm
 pub enum JwaAlg {
     /// ECDSA with P-256 and SHA256
-    #[default]
     ES256,
     /// RSASSA-PKCS1-v1_5 with SHA-256
     RS256,
     /// HMAC SHA256
+    #[default]
     HS256,
 }
 

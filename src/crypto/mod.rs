@@ -343,6 +343,10 @@ impl JwsSignerToVerifier for JwsEs256Signer {
 }
 
 impl JwsSigner for JwsEs256Signer {
+    fn get_kid(&mut self) -> &str {
+        self.kid.as_str()
+    }
+
     fn update_header(&mut self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
         // Update the alg to match.
         header.alg = JwaAlg::ES256;
@@ -638,6 +642,10 @@ impl JwsSignerToVerifier for JwsRs256Signer {
 }
 
 impl JwsSigner for JwsRs256Signer {
+    fn get_kid(&mut self) -> &str {
+        self.kid.as_str()
+    }
+
     fn update_header(&mut self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
         // Update the alg to match.
         header.alg = JwaAlg::RS256;
@@ -865,6 +873,10 @@ impl TryFrom<&[u8]> for JwsHs256Signer {
 }
 
 impl JwsSigner for JwsHs256Signer {
+    fn get_kid(&mut self) -> &str {
+        self.kid.as_str()
+    }
+
     fn update_header(&mut self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
         // Update the alg to match.
         header.alg = JwaAlg::HS256;
@@ -875,7 +887,24 @@ impl JwsSigner for JwsHs256Signer {
     }
 
     fn sign(&mut self, jwsc: JwsCompactSignData<'_>) -> Result<Vec<u8>, JwtError> {
-        todo!();
+        let mut signer = sign::Signer::new(self.digest, &self.skey).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
+
+        signer
+            .update(jwsc.hdr_bytes)
+            .and_then(|_| signer.update(".".as_bytes()))
+            .and_then(|_| signer.update(jwsc.payload_bytes))
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            })?;
+
+        signer.sign_to_vec().map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })
     }
 }
 

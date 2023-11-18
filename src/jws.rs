@@ -46,6 +46,18 @@ impl JwsBuilder {
         self
     }
 
+    #[cfg(test)]
+    pub fn set_alg(mut self, alg: crate::compact::JwaAlg) -> Self {
+        self.header.alg = alg;
+        self
+    }
+
+    #[cfg(test)]
+    pub fn set_kid(mut self, kid: Option<&str>) -> Self {
+        self.header.kid = kid.map(|s| s.to_string());
+        self
+    }
+
     pub fn build(self) -> Jws {
         let JwsBuilder { header, payload } = self;
         Jws { header, payload }
@@ -129,6 +141,7 @@ impl fmt::Display for JwsSigned {
 #[cfg(all(feature = "openssl", test))]
 mod tests {
     use super::{Jws, JwsBuilder};
+    use crate::compact::JwaAlg;
     use crate::crypto::{JwsEs256Signer, JwsEs256Verifier, JwsHs256Signer, JwsX509VerifierBuilder};
     use crate::traits::{JwsSigner, JwsSignerToVerifier, JwsVerifier};
     use serde::{Deserialize, Serialize};
@@ -154,7 +167,11 @@ mod tests {
 
         let payload = serde_json::to_vec(&inner).expect("Unable to serialise");
 
-        let jwt = JwsBuilder::from(payload).set_typ(Some("JWT")).build();
+        let jwt = JwsBuilder::from(payload)
+            .set_typ(Some("JWT"))
+            .set_kid(Some(jws_es256_signer.get_kid()))
+            .set_alg(JwaAlg::ES256)
+            .build();
 
         let jwts = jwt.sign(&mut jws_es256_signer).expect("failed to sign jwt");
 
@@ -164,6 +181,9 @@ mod tests {
         let released = jwts
             .verify(&mut jwk_es256_verifier)
             .expect("Unable to validate jwt");
+
+        trace!(?released);
+        trace!(?jwt);
 
         assert!(released == jwt);
     }
@@ -180,7 +200,11 @@ mod tests {
 
         let payload = serde_json::to_vec(&inner).expect("Unable to serialise");
 
-        let jwt = JwsBuilder::from(payload).set_typ(Some("JWT")).build();
+        let jwt = JwsBuilder::from(payload)
+            .set_typ(Some("JWT"))
+            .set_kid(Some(jws_hs256_verifier.get_kid()))
+            .set_alg(JwaAlg::HS256)
+            .build();
 
         let jwts = jwt
             .sign(&mut jws_hs256_verifier)
@@ -189,6 +213,9 @@ mod tests {
         let released = jwts
             .verify(&mut jws_hs256_verifier)
             .expect("Unable to validate jwt");
+
+        trace!(?released);
+        trace!(?jwt);
 
         assert!(released == jwt);
     }
