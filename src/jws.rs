@@ -18,12 +18,12 @@ use std::str::FromStr;
 /// An unverified jws input which is ready to validate
 #[derive(Debug)]
 pub struct JwsUnverified {
-    jwsc: JwsCompact,
+    pub(crate) jwsc: JwsCompact,
 }
 
 /// A signed jwt which can be converted to a string.
 pub struct JwsSigned {
-    jwsc: JwsCompact,
+    pub(crate) jwsc: JwsCompact,
 }
 
 pub struct JwsBuilder {
@@ -43,6 +43,11 @@ impl From<Vec<u8>> for JwsBuilder {
 impl JwsBuilder {
     pub fn set_typ(mut self, typ: Option<&str>) -> Self {
         self.header.typ = typ.map(|s| s.to_string());
+        self
+    }
+
+    pub fn set_cty(mut self, cty: Option<&str>) -> Self {
+        self.header.cty = cty.map(|s| s.to_string());
         self
     }
 
@@ -92,12 +97,6 @@ impl Jws {
 
 #[cfg(feature = "openssl")]
 impl JwsUnverified {
-    /// Using this [JwsVerifier], assert the correct signature of the data contained in
-    /// this jwt.
-    pub fn verify<K: JwsVerifier>(&self, verifier: &mut K) -> Result<Jws, JwtError> {
-        self.jwsc.verify(verifier)
-    }
-
     /// Get the embedded certificate chain (if any) in DER forms
     pub fn get_x5c_chain(&self) -> Result<Option<Vec<x509::X509>>, JwtError> {
         self.jwsc.get_x5c_chain()
@@ -105,6 +104,12 @@ impl JwsUnverified {
 }
 
 impl JwsUnverified {
+    /// Using this [JwsVerifier], assert the correct signature of the data contained in
+    /// this jwt.
+    pub fn verify<K: JwsVerifier>(&self, verifier: &mut K) -> Result<Jws, JwtError> {
+        self.jwsc.verify(verifier)
+    }
+
     /// Get the embedded public key used to sign this jwt, if present.
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
         self.jwsc.get_jwk_pubkey()

@@ -56,50 +56,7 @@ impl JwsCompact {
     }
 }
 
-impl JwsCompact {
-    pub fn verify<K: JwsVerifier>(&self, verifier: &mut K) -> Result<Jws, JwtError> {
-        if verifier.verify_signature(self)? {
-            general_purpose::URL_SAFE_NO_PAD
-                .decode(&self.payload_b64)
-                .map_err(|_| {
-                    debug!("invalid base64");
-                    JwtError::InvalidBase64
-                })
-                .map(|payload| Jws {
-                    header: self.header.clone(),
-                    payload,
-                })
-        } else {
-            debug!("invalid signature");
-            Err(JwtError::InvalidSignature)
-        }
-    }
-}
-
 impl Jws {
-    pub fn new(payload: Vec<u8>) -> Self {
-        Jws {
-            header: ProtectedHeader::default(),
-            payload,
-        }
-    }
-
-    pub fn set_kid(mut self, kid: String) -> Self {
-        self.header.kid = Some(kid);
-        self
-    }
-
-    pub fn set_typ(mut self, typ: String) -> Self {
-        self.header.typ = Some(typ);
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn set_cty(mut self, cty: String) -> Self {
-        self.header.cty = Some(cty);
-        self
-    }
-
     pub fn sign<S: JwsSigner>(&self, signer: &mut S) -> Result<JwsCompact, JwtError> {
         let mut header = self.header.clone();
 
@@ -979,7 +936,7 @@ mod tests {
         JwsSignerToVerifier,
     };
     use crate::compact::{Jwk, JwsCompact};
-    use crate::jws::Jws;
+    use crate::jws::{Jws, JwsBuilder};
     use base64::{engine::general_purpose, Engine as _};
     use std::convert::TryFrom;
     use std::str::FromStr;
@@ -1039,12 +996,13 @@ mod tests {
         )
         .expect("failed to construct signer");
 
-        let jws = Jws::new(vec![
+        let jws = JwsBuilder::from(vec![
             123, 34, 105, 115, 115, 34, 58, 34, 106, 111, 101, 34, 44, 13, 10, 32, 34, 101, 120,
             112, 34, 58, 49, 51, 48, 48, 56, 49, 57, 51, 56, 48, 44, 13, 10, 32, 34, 104, 116, 116,
             112, 58, 47, 47, 101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109, 47, 105, 115, 95,
             114, 111, 111, 116, 34, 58, 116, 114, 117, 101, 125,
-        ]);
+        ])
+        .build();
 
         let jwsc = jws.sign(&mut jws_es256_signer).expect("Failed to sign");
 
@@ -1091,10 +1049,11 @@ mod tests {
             JwsEs256Signer::from_es256_der(&der).expect("Failed to restore signer");
 
         // This time we'll add the jwk pubkey and show it being used with the validator.
-        let jws = Jws::new(vec![0, 1, 2, 3, 4])
-            .set_kid("abcd".to_string())
-            .set_typ("abcd".to_string())
-            .set_cty("abcd".to_string());
+        let jws = JwsBuilder::from(vec![0, 1, 2, 3, 4])
+            .set_kid(Some("abcd"))
+            .set_typ(Some("abcd"))
+            .set_cty(Some("abcd"))
+            .build();
 
         jws_es256_signer.set_sign_option_embed_jwk(true);
 
@@ -1188,9 +1147,10 @@ mod tests {
             JwsRs256Signer::from_rs256_der(&der).expect("Failed to restore signer");
 
         // This time we'll add the jwk pubkey and show it being used with the validator.
-        let jws = Jws::new(vec![0, 1, 2, 3, 4])
-            .set_typ("abcd".to_string())
-            .set_cty("abcd".to_string());
+        let jws = JwsBuilder::from(vec![0, 1, 2, 3, 4])
+            .set_typ(Some("abcd"))
+            .set_cty(Some("abcd"))
+            .build();
 
         jws_rs256_signer.set_sign_option_embed_jwk(true);
 

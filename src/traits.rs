@@ -1,5 +1,5 @@
 use crate::compact::{JwsCompact, ProtectedHeader};
-use crate::JwtError;
+use crate::error::JwtError;
 
 pub struct JwsCompactSignData<'a> {
     pub(crate) hdr_bytes: &'a [u8],

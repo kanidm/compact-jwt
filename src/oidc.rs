@@ -1,11 +1,13 @@
 //! Oidc token implementation
 
-use crate::compact::{JwsCompact, JwsInner};
-#[cfg(feature = "openssl")]
-use crate::crypto::{JwsSignerEnum, JwsValidatorEnum};
+use crate::compact::{Jwk, JwsCompact};
+use crate::jws::{Jws, JwsSigned, JwsUnverified};
+
+use crate::traits::{JwsSigner, JwsVerifier};
+
 use crate::error::JwtError;
 use crate::{btreemap_empty, vec_empty};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
@@ -14,12 +16,12 @@ use uuid::Uuid;
 
 /// An unverified token input which is ready to validate
 pub struct OidcUnverified {
-    jwsc: JwsCompact,
+    jws: JwsUnverified,
 }
 
 /// A signed oidc token which can be converted to a string.
 pub struct OidcSigned {
-    jwsc: JwsCompact,
+    jws: JwsSigned,
 }
 
 #[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
@@ -116,69 +118,26 @@ pub struct OidcToken {
 
 #[cfg(feature = "openssl")]
 impl OidcToken {
-    fn sign_inner(
-        &self,
-        signer: &JwsSignerEnum,
-        kid: Option<&str>,
-    ) -> Result<OidcSigned, JwtError> {
-        // We need to convert this payload to a set of bytes.
-        trace!(
-            "✅ {}",
-            serde_json::to_string(&self).map_err(|_| JwtError::InvalidJwt)?
-        );
-        let payload = serde_json::to_vec(&self).map_err(|_| JwtError::InvalidJwt)?;
+    pub fn sign<S: JwsSigner>(&self, signer: &mut S) -> Result<OidcSigned, JwtError> {
+        let jwts = Jws::into_json(self).map_err(|_| JwtError::InvalidJwt)?;
 
-        let jws = JwsInner::new(payload)
-            .set_kid(signer.get_kid().to_string())
-            .set_typ("JWT".to_string());
-
-        let jws = if let Some(k) = kid {
-            jws.set_kid(k.to_string())
-        } else {
-            jws
-        };
-
-        jws.sign_inner(signer, None, None)
-            .map(|jwsc| OidcSigned { jwsc })
+        jwts.sign(signer).map(|jwsc| OidcSigned {
+            jws: JwsSigned { jwsc },
+        })
     }
-
-    /// Use this private signer to created a signed oidc token.
-    pub fn sign(&self, signer: &JwsSignerEnum) -> Result<OidcSigned, JwtError> {
-        self.sign_inner(signer, None)
-    }
-
-    /*
-    /// set the key id (kid) into the header.
-    /// use set_kid on jws.
-    pub fn sign_with_kid(&self, signer: &JwsSignerEnum, kid: &str) -> Result<OidcSigned, JwtError> {
-        self.sign_inner(signer, Some(kid))
-    }
-    */
-
-    /*
-    /// Use this private signer to created a signed oidc token, which contains the public
-    /// key for verification embedded in the header of the token.
-    pub fn sign_embed_public_jwk(&self, signer: &JwsSignerEnum) -> Result<OidcSigned, JwtError> {
-        let jwk = signer.public_key_as_jwk()?;
-        self.sign_inner(signer, None, Some(jwk))
-    }
-    */
 }
 
-#[cfg(feature = "openssl")]
 impl OidcUnverified {
-    /// Using this JwsValidatorEnum, assert the correct signature of the data contained in
+    /// Using this JwsVerifier, assert the correct signature of the data contained in
     /// this token. The current time is represented by seconds since the epoch. You may
     /// choose to ignore exp validation by setting this to 0, but this is DANGEROUS.
-    pub fn validate(
-        &self,
-        validator: &JwsValidatorEnum,
-        curtime: i64,
-    ) -> Result<OidcToken, JwtError> {
-        let released = self.jwsc.validate(validator)?;
+    pub fn verify<K>(&self, verifier: &mut K, curtime: i64) -> Result<OidcToken, JwtError>
+    where
+        K: JwsVerifier,
+    {
+        let jws = self.jws.verify(verifier)?;
 
-        let tok: OidcToken =
-            serde_json::from_slice(released.payload()).map_err(|_| JwtError::InvalidJwt)?;
+        let tok: OidcToken = jws.from_json().map_err(|_| JwtError::InvalidJwt)?;
 
         // Check the exp
         if tok.exp != 0 && tok.exp < curtime {
@@ -190,33 +149,14 @@ impl OidcUnverified {
 }
 
 impl OidcUnverified {
-    /// Retrieve the Key ID used to sign this jwt, if any.
-    pub fn get_jwk_kid(&self) -> Option<&str> {
-        self.jwsc.get_jwk_kid()
-    }
-
-    /*
-    /// Retrieve the URL which holds the public key used to sign this token if it exists
-    /// in the JWS header.
-    pub fn get_jwk_pubkey_url(&self) -> Option<&Url> {
-        self.jwsc.get_jwk_pubkey_url()
-    }
-
-    /// Retrieve the public key used to sign this token if it exists in the JWS header.
+    /// Get the embedded public key used to sign this jwt, if present.
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
-        self.jwsc.get_jwk_pubkey()
+        self.jws.get_jwk_pubkey()
     }
-    */
 
-    /// UNSAFE - release the content of this JWS without verifying it's internal structure.
-    ///
-    /// THIS MAY LEAD TO SECURITY VULNERABILITIES. YOU SHOULD BE ACUTELY AWARE OF THE RISKS WHEN
-    /// CALLING THIS FUNCTION.
-    #[cfg(feature = "unsafe_release_without_verify")]
-    pub fn unsafe_release_without_verification<V>(&self) -> Result<OidcToken, JwtError> {
-        let released = self.jwsc.release_without_verification()?;
-
-        serde_json::from_slice(released.payload()).map_err(|_| JwtError::InvalidJwt)
+    /// Get the KID used to sign this Jws if present
+    pub fn get_jwk_kid(&self) -> Option<&str> {
+        self.jws.get_jwk_kid()
     }
 }
 
@@ -224,7 +164,9 @@ impl FromStr for OidcUnverified {
     type Err = JwtError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        JwsCompact::from_str(s).map(|jwsc| OidcUnverified { jwsc })
+        JwsCompact::from_str(s).map(|jwsc| OidcUnverified {
+            jws: JwsUnverified { jwsc },
+        })
     }
 }
 
@@ -232,20 +174,23 @@ impl OidcSigned {
     /// Invalidate this signed oidc token, causing it to require validation before you can use it
     /// again.
     pub fn invalidate(self) -> OidcUnverified {
-        OidcUnverified { jwsc: self.jwsc }
+        OidcUnverified {
+            jws: self.jws.invalidate(),
+        }
     }
 }
 
 impl fmt::Display for OidcSigned {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.jwsc.fmt(f)
+        self.jws.fmt(f)
     }
 }
 
 #[cfg(all(feature = "openssl", test))]
 mod tests {
     use super::{OidcSubject, OidcToken, OidcUnverified};
-    use crate::crypto::{JwsSignerEnum, JwsValidatorEnum};
+    use crate::crypto::JwsEs256Signer;
+    use crate::traits::{JwsSigner, JwsSignerToVerifier, JwsVerifier};
     use std::convert::TryFrom;
     use std::str::FromStr;
     use url::Url;
@@ -271,56 +216,18 @@ mod tests {
             claims: Default::default(),
         };
 
-        let jwss = JwsSignerEnum::generate_es256().expect("failed to construct signer.");
-        let pub_jwk = jwss.public_key_as_jwk().unwrap();
-        let jws_validator =
-            JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
+        let mut jws_es256_signer =
+            JwsEs256Signer::generate_es256().expect("failed to construct signer.");
+        let mut jwk_es256_verifier = jws_es256_signer
+            .get_verifier()
+            .expect("failed to get verifier from signer");
 
-        let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
+        let jwts = jwt.sign(&mut jws_es256_signer).expect("failed to sign jwt");
 
         let jwtu = jwts.invalidate();
 
         let released = jwtu
-            .validate(&jws_validator, 0)
-            .expect("Unable to validate jwt");
-
-        assert!(released == jwt);
-    }
-
-    #[test]
-    fn test_sign_and_validate_str() {
-        let _ = tracing_subscriber::fmt::try_init();
-        let jwt = OidcToken {
-            iss: Url::parse("https://oidc.example.com").unwrap(),
-            sub: OidcSubject::S("a unique id".to_string()),
-            aud: "test".to_string(),
-            exp: 0,
-            nbf: Some(0),
-            iat: 0,
-            auth_time: None,
-            nonce: None,
-            at_hash: None,
-            acr: None,
-            amr: None,
-            azp: None,
-            jti: None,
-            s_claims: Default::default(),
-            claims: Default::default(),
-        };
-
-        let jwss = JwsSignerEnum::generate_es256().expect("failed to construct signer.");
-        let pub_jwk = jwss.public_key_as_jwk().unwrap();
-        let jws_validator =
-            JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
-
-        let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
-
-        let jwt_str = jwts.to_string();
-        trace!("{}", jwt_str);
-        let jwtu = OidcUnverified::from_str(&jwt_str).expect("Unable to parse jws/jwt");
-
-        let released = jwtu
-            .validate(&jws_validator, 0)
+            .verify(&mut jwk_es256_verifier, 0)
             .expect("Unable to validate jwt");
 
         assert!(released == jwt);

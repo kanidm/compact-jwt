@@ -1,26 +1,23 @@
 //! Jwt implementation
 
 use crate::btreemap_empty;
-use crate::compact::{Jwk, JwsCompact, JwsInner};
-#[cfg(feature = "openssl")]
-use crate::crypto::{JwsSignerEnum, JwsValidatorEnum};
-#[cfg(feature = "openssl")]
-use url::Url;
-
+use crate::compact::{Jwk, JwsCompact};
 use crate::error::JwtError;
-use serde::{Deserialize, Serialize};
+use crate::jws::{Jws, JwsSigned, JwsUnverified};
+use crate::traits::{JwsSigner, JwsVerifier};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
 /// An unverified jwt input which is ready to validate
 pub struct JwtUnverified {
-    jwsc: JwsCompact,
+    jws: JwsUnverified,
 }
 
 /// A signed jwt which can be converted to a string.
 pub struct JwtSigned {
-    jwsc: JwsCompact,
+    jws: JwsSigned,
 }
 
 /// A Jwt that is being created or has succeeded in being validated
@@ -120,68 +117,34 @@ impl<V> Jwt<V>
 where
     V: Clone + Serialize,
 {
-    fn sign_inner(
-        &self,
-        signer: &JwsSignerEnum,
-        jku: Option<Url>,
-        jwk: Option<Jwk>,
-    ) -> Result<JwtSigned, JwtError> {
-        // We need to convert this payload to a set of bytes.
-        // eprintln!("{:?}", serde_json::to_string(&self));
-        let payload = serde_json::to_vec(&self).map_err(|_| JwtError::InvalidJwt)?;
+    pub fn sign<S: JwsSigner>(&self, signer: &mut S) -> Result<JwtSigned, JwtError> {
+        let jwts = Jws::into_json(self).map_err(|_| JwtError::InvalidJwt)?;
 
-        let jws = JwsInner::new(payload)
-            .set_kid(signer.get_kid().to_string())
-            .set_typ("JWT".to_string());
-
-        jws.sign_inner(signer, jku, jwk)
-            .map(|jwsc| JwtSigned { jwsc })
-    }
-
-    /// Use this private signer to created a signed jwt.
-    pub fn sign(&self, signer: &JwsSignerEnum) -> Result<JwtSigned, JwtError> {
-        self.sign_inner(signer, None, None)
-    }
-
-    /// Use this to create a signed jwt that includes the public key used in the signing process
-    pub fn sign_embed_public_jwk(&self, signer: &JwsSignerEnum) -> Result<JwtSigned, JwtError> {
-        let jwk = signer.public_key_as_jwk()?;
-        self.sign_inner(signer, None, Some(jwk))
+        jwts.sign(signer).map(|jwsc| JwtSigned {
+            jws: JwsSigned { jwsc },
+        })
     }
 }
 
-#[cfg(feature = "openssl")]
 impl JwtUnverified {
-    /// Using this JwsValidatorEnum, assert the correct signature of the data contained in
-    /// this jwt.
-    pub fn validate<V>(&self, validator: &JwsValidatorEnum) -> Result<Jwt<V>, JwtError>
+    pub fn verify<K, V>(&self, verifier: &mut K) -> Result<Jwt<V>, JwtError>
     where
-        V: Clone + serde::de::DeserializeOwned,
+        K: JwsVerifier,
+        V: Clone + DeserializeOwned,
     {
-        let released = self.jwsc.validate(validator)?;
+        let jws = self.jws.verify(verifier)?;
 
-        serde_json::from_slice(released.payload()).map_err(|_| JwtError::InvalidJwt)
+        jws.from_json().map_err(|_| JwtError::InvalidJwt)
     }
-}
 
-impl JwtUnverified {
     /// Get the embedded public key used to sign this jwt, if present.
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
-        self.jwsc.get_jwk_pubkey()
+        self.jws.get_jwk_pubkey()
     }
 
-    /// UNSAFE - release the content of this JWS without verifying it's internal structure.
-    ///
-    /// THIS MAY LEAD TO SECURITY VULNERABILITIES. YOU SHOULD BE ACUTELY AWARE OF THE RISKS WHEN
-    /// CALLING THIS FUNCTION.
-    #[cfg(feature = "unsafe_release_without_verify")]
-    pub fn unsafe_release_without_verification<V>(&self) -> Result<Jwt<V>, JwtError>
-    where
-        V: Clone + serde::de::DeserializeOwned,
-    {
-        let released = self.jwsc.release_without_verification()?;
-
-        serde_json::from_slice(released.payload()).map_err(|_| JwtError::InvalidJwt)
+    /// Get the KID used to sign this Jws if present
+    pub fn get_jwk_kid(&self) -> Option<&str> {
+        self.jws.get_jwk_kid()
     }
 }
 
@@ -189,7 +152,7 @@ impl FromStr for JwtUnverified {
     type Err = JwtError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        JwsCompact::from_str(s).map(|jwsc| JwtUnverified { jwsc })
+        JwsUnverified::from_str(s).map(|jws| JwtUnverified { jws })
     }
 }
 
@@ -197,20 +160,23 @@ impl JwtSigned {
     /// Invalidate this signed jwt, causing it to require validation before you can use it
     /// again.
     pub fn invalidate(self) -> JwtUnverified {
-        JwtUnverified { jwsc: self.jwsc }
+        JwtUnverified {
+            jws: self.jws.invalidate(),
+        }
     }
 }
 
 impl fmt::Display for JwtSigned {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.jwsc.fmt(f)
+        self.jws.fmt(f)
     }
 }
 
 #[cfg(all(feature = "openssl", test))]
 mod tests {
     use super::{Jwt, JwtUnverified};
-    use crate::crypto::{JwsSignerEnum, JwsValidatorEnum};
+    use crate::crypto::JwsEs256Signer;
+    use crate::traits::{JwsSigner, JwsSignerToVerifier, JwsVerifier};
     use serde::{Deserialize, Serialize};
     use std::convert::TryFrom;
     use std::str::FromStr;
@@ -223,26 +189,6 @@ mod tests {
     #[test]
     fn test_sign_and_validate() {
         let _ = tracing_subscriber::fmt::try_init();
-        let jwt: Jwt<()> = Jwt {
-            iss: Some("test".to_string()),
-            ..Default::default()
-        };
-
-        let jwss = JwsSignerEnum::generate_es256().expect("failed to construct signer.");
-        let pub_jwk = jwss.public_key_as_jwk().unwrap();
-        let jws_validator =
-            JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
-
-        let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
-
-        let jwtu = jwts.invalidate();
-
-        let released = jwtu
-            .validate(&jws_validator)
-            .expect("Unable to validate jwt");
-
-        assert!(released == jwt);
-
         let jwt = Jwt {
             iss: Some("test".to_string()),
             extensions: CustomExtension {
@@ -251,38 +197,18 @@ mod tests {
             ..Default::default()
         };
 
-        let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
+        let mut jws_es256_signer =
+            JwsEs256Signer::generate_es256().expect("failed to construct signer.");
+        let mut jwk_es256_verifier = jws_es256_signer
+            .get_verifier()
+            .expect("failed to get verifier from signer");
+
+        let jwts = jwt.sign(&mut jws_es256_signer).expect("failed to sign jwt");
 
         let jwtu = jwts.invalidate();
 
         let released = jwtu
-            .validate(&jws_validator)
-            .expect("Unable to validate jwt");
-
-        assert!(released == jwt);
-    }
-
-    #[test]
-    fn test_sign_and_validate_str() {
-        let _ = tracing_subscriber::fmt::try_init();
-        let jwt = Jwt::<()> {
-            iss: Some("test".to_string()),
-            ..Default::default()
-        };
-
-        let jwss = JwsSignerEnum::generate_es256().expect("failed to construct signer.");
-        let pub_jwk = jwss.public_key_as_jwk().unwrap();
-        let jws_validator =
-            JwsValidatorEnum::try_from(&pub_jwk).expect("Unable to create validator");
-
-        let jwts = jwt.sign(&jwss).expect("failed to sign jwt");
-
-        let jwt_str = jwts.to_string();
-        trace!("{}", jwt_str);
-        let jwtu = JwtUnverified::from_str(&jwt_str).expect("Unable to parse jws/jwt");
-
-        let released = jwtu
-            .validate(&jws_validator)
+            .verify(&mut jwk_es256_verifier)
             .expect("Unable to validate jwt");
 
         assert!(released == jwt);

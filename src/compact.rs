@@ -1,4 +1,4 @@
-//! JWS Cryptographic Operations
+//!
 use base64::{engine::general_purpose, Engine as _};
 
 use serde::{Deserialize, Serialize};
@@ -7,6 +7,8 @@ use std::str::FromStr;
 use url::Url;
 
 use crate::error::JwtError;
+use crate::jws::Jws;
+use crate::traits::JwsVerifier;
 use base64urlsafedata::Base64UrlSafeData;
 
 // https://datatracker.ietf.org/doc/html/rfc7515
@@ -156,6 +158,24 @@ impl JwsCompact {
     #[allow(dead_code)]
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
         self.header.jwk.as_ref()
+    }
+
+    pub fn verify<K: JwsVerifier>(&self, verifier: &mut K) -> Result<Jws, JwtError> {
+        if verifier.verify_signature(self)? {
+            general_purpose::URL_SAFE_NO_PAD
+                .decode(&self.payload_b64)
+                .map_err(|_| {
+                    debug!("invalid base64");
+                    JwtError::InvalidBase64
+                })
+                .map(|payload| Jws {
+                    header: self.header.clone(),
+                    payload,
+                })
+        } else {
+            debug!("invalid signature");
+            Err(JwtError::InvalidSignature)
+        }
     }
 }
 

@@ -88,11 +88,11 @@ pub mod traits;
 
 pub mod error;
 pub mod jws;
-// pub mod jwt;
-// pub mod oidc;
+pub mod jwt;
+pub mod oidc;
 
-pub use crate::compact::{JwaAlg, Jwk, JwkKeySet, JwkUse};
-pub use crate::error::JwtError;
+// pub use crate::compact::{JwaAlg, Jwk, JwkKeySet, JwkUse};
+// pub use crate::error::JwtError;
 // pub use crate::jws::{Jws, JwsSigned, JwsUnverified};
 // pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};
 // pub use crate::oidc::{OidcClaims, OidcSigned, OidcSubject, OidcToken, OidcUnverified};

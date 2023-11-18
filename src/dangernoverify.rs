@@ -1,6 +1,6 @@
 use crate::compact::JwsCompact;
+use crate::error::JwtError;
 use crate::traits::JwsVerifier;
-use crate::JwtError;
 
 #[derive(Default)]
 pub struct JwsDangerReleaseWithoutVerify {}
