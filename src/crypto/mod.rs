@@ -1,14 +1,8 @@
 use openssl::{bn, ec, ecdsa, hash, nid, pkey, rand, rsa, sign, x509};
 use std::convert::TryFrom;
 
-use base64::{engine::general_purpose, Engine as _};
-
-use serde::{Deserialize, Serialize};
-use std::fmt;
-use std::str::FromStr;
-use url::Url;
-
 use crate::error::JwtError;
+use base64::{engine::general_purpose, Engine as _};
 use base64urlsafedata::Base64UrlSafeData;
 
 use crate::compact::{EcCurve, JwaAlg, Jwk, JwkUse, JwsCompact, ProtectedHeader};
@@ -61,7 +55,7 @@ impl Jws {
         let mut header = self.header.clone();
 
         // Let the signer update the header as required.
-        signer.update_header(&mut header);
+        signer.update_header(&mut header)?;
 
         let hdr_b64 = serde_json::to_vec(&header)
             .map_err(|e| {
@@ -368,30 +362,6 @@ pub struct JwsEs256Verifier {
     digest: hash::MessageDigest,
 }
 
-/*
-impl TryFrom<x509::X509> for JwsEs256Verifier {
-    type Error = JwtError;
-
-    fn try_from(value: x509::X509) -> Result<Self, Self::Error> {
-        let pkey = value.public_key().map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-        let digest = hash::MessageDigest::sha256();
-        pkey.ec_key()
-            .map(|pkey| JwsEs256Verifier {
-                kid: None,
-                pkey,
-                digest,
-            })
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
-            })
-    }
-}
-*/
-
 impl TryFrom<&Jwk> for JwsEs256Verifier {
     type Error = JwtError;
 
@@ -446,6 +416,10 @@ impl TryFrom<&Jwk> for JwsEs256Verifier {
 }
 
 impl JwsVerifier for JwsEs256Verifier {
+    fn get_kid(&mut self) -> Option<&str> {
+        self.kid.as_deref()
+    }
+
     fn verify_signature(&mut self, jwsc: &JwsCompact) -> Result<bool, JwtError> {
         if jwsc.header.alg != JwaAlg::ES256 {
             debug!(jwsc_alg = ?jwsc.header.alg, "validator algorithm mismatch");
@@ -720,6 +694,10 @@ impl TryFrom<&Jwk> for JwsRs256Verifier {
 }
 
 impl JwsVerifier for JwsRs256Verifier {
+    fn get_kid(&mut self) -> Option<&str> {
+        self.kid.as_deref()
+    }
+
     fn verify_signature(&mut self, jwsc: &JwsCompact) -> Result<bool, JwtError> {
         if jwsc.header.alg != JwaAlg::RS256 {
             debug!(jwsc_alg = ?jwsc.header.alg, "validator algorithm mismatch");
@@ -863,6 +841,10 @@ impl JwsSigner for JwsHs256Signer {
 }
 
 impl JwsVerifier for JwsHs256Signer {
+    fn get_kid(&mut self) -> Option<&str> {
+        Some(self.kid.as_str())
+    }
+
     fn verify_signature(&mut self, jwsc: &JwsCompact) -> Result<bool, JwtError> {
         if jwsc.header.alg != JwaAlg::HS256 {
             debug!(jwsc_alg = ?jwsc.header.alg, "validator algorithm mismatch");
@@ -1034,6 +1016,10 @@ pub struct JwsX509Verifier {
 }
 
 impl JwsVerifier for JwsX509Verifier {
+    fn get_kid(&mut self) -> Option<&str> {
+        self.kid.as_deref()
+    }
+
     fn verify_signature(&mut self, jwsc: &JwsCompact) -> Result<bool, JwtError> {
         let pkey = self.pkey.public_key().map_err(|e| {
             debug!(?e);
@@ -1086,7 +1072,7 @@ mod tests {
         JwsSignerToVerifier,
     };
     use crate::compact::{Jwk, JwsCompact};
-    use crate::jws::{Jws, JwsBuilder};
+    use crate::jws::JwsBuilder;
     use base64::{engine::general_purpose, Engine as _};
     use std::convert::TryFrom;
     use std::str::FromStr;

@@ -1,16 +1,8 @@
 //! Jws Implementation
 
 use crate::compact::{Jwk, JwsCompact, ProtectedHeader};
-
-#[cfg(feature = "openssl")]
-use openssl::x509;
-
-#[cfg(feature = "openssl")]
-use url::Url;
-
-use crate::traits::JwsVerifier;
-
 use crate::error::JwtError;
+use crate::traits::JwsVerifier;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -100,7 +92,7 @@ impl Jws {
 #[cfg(feature = "openssl")]
 impl JwsUnverified {
     /// Get the embedded certificate chain (if any) in DER forms
-    pub fn get_x5c_chain(&self) -> Result<Option<Vec<x509::X509>>, JwtError> {
+    pub fn get_x5c_chain(&self) -> Result<Option<Vec<openssl::x509::X509>>, JwtError> {
         self.jwsc.get_x5c_chain()
     }
 }
@@ -147,10 +139,10 @@ impl fmt::Display for JwsSigned {
 
 #[cfg(all(feature = "openssl", test))]
 mod tests {
-    use super::{Jws, JwsBuilder};
+    use super::JwsBuilder;
     use crate::compact::JwaAlg;
     use crate::crypto::{JwsEs256Signer, JwsEs256Verifier, JwsHs256Signer, JwsX509VerifierBuilder};
-    use crate::traits::{JwsSigner, JwsSignerToVerifier, JwsVerifier};
+    use crate::traits::{JwsSigner, JwsSignerToVerifier};
     use openssl::x509;
     use serde::{Deserialize, Serialize};
     use std::convert::TryFrom;

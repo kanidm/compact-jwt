@@ -1,7 +1,7 @@
 //! Jwt implementation
 
 use crate::btreemap_empty;
-use crate::compact::{Jwk, JwsCompact};
+use crate::compact::Jwk;
 use crate::error::JwtError;
 use crate::jws::{Jws, JwsSigned, JwsUnverified};
 use crate::traits::{JwsSigner, JwsVerifier};
@@ -176,12 +176,10 @@ impl fmt::Display for JwtSigned {
 
 #[cfg(all(feature = "openssl", test))]
 mod tests {
-    use super::{Jwt, JwtUnverified};
+    use super::Jwt;
     use crate::crypto::JwsEs256Signer;
-    use crate::traits::{JwsSigner, JwsSignerToVerifier, JwsVerifier};
+    use crate::traits::JwsSignerToVerifier;
     use serde::{Deserialize, Serialize};
-    use std::convert::TryFrom;
-    use std::str::FromStr;
 
     #[derive(Default, Debug, Serialize, Clone, Deserialize, PartialEq)]
     struct CustomExtension {

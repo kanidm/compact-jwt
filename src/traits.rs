@@ -21,5 +21,7 @@ pub trait JwsSignerToVerifier {
 }
 
 pub trait JwsVerifier {
+    fn get_kid(&mut self) -> Option<&str>;
+
     fn verify_signature(&mut self, jwsc: &JwsCompact) -> Result<bool, JwtError>;
 }

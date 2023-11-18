@@ -7,7 +7,7 @@ use crate::traits::{JwsSigner, JwsVerifier};
 
 use crate::error::JwtError;
 use crate::{btreemap_empty, vec_empty};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
@@ -190,11 +190,9 @@ impl fmt::Display for OidcSigned {
 
 #[cfg(all(feature = "openssl", test))]
 mod tests {
-    use super::{OidcSubject, OidcToken, OidcUnverified};
+    use super::{OidcSubject, OidcToken};
     use crate::crypto::JwsEs256Signer;
-    use crate::traits::{JwsSigner, JwsSignerToVerifier, JwsVerifier};
-    use std::convert::TryFrom;
-    use std::str::FromStr;
+    use crate::traits::JwsSignerToVerifier;
     use url::Url;
 
     #[test]

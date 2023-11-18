@@ -6,20 +6,23 @@ use crate::traits::JwsVerifier;
 pub struct JwsDangerReleaseWithoutVerify {}
 
 impl JwsVerifier for JwsDangerReleaseWithoutVerify {
-    fn verify_signature(&mut self, jwsc: &JwsCompact) -> Result<bool, JwtError> {
+    fn get_kid(&mut self) -> Option<&str> {
+        None
+    }
+
+    fn verify_signature(&mut self, _jwsc: &JwsCompact) -> Result<bool, JwtError> {
         warn!("releasing without signature check.");
         Ok(true)
     }
 }
 
+#[cfg(test)]
 mod tests {
+    use super::JwsDangerReleaseWithoutVerify;
     use crate::compact::JwaAlg;
     use crate::jws::{JwsBuilder, JwsUnverified};
-    use crate::traits::JwsVerifier;
     use serde::{Deserialize, Serialize};
-    use std::convert::TryFrom;
-
-    use crate::dangernoverify::JwsDangerReleaseWithoutVerify;
+    use std::str::FromStr;
 
     #[derive(Default, Debug, Serialize, Clone, Deserialize, PartialEq)]
     struct CustomExtension {
@@ -29,8 +32,6 @@ mod tests {
     #[test]
     fn test_unsafe_release_without_verification() {
         let _ = tracing_subscriber::fmt::try_init();
-
-        use std::str::FromStr;
 
         let inner = CustomExtension {
             my_exten: "Hello".to_string(),
