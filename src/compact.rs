@@ -173,7 +173,7 @@ impl JwsCompact {
             general_purpose::URL_SAFE_NO_PAD
                 .decode(&self.payload_b64)
                 .map_err(|_| {
-                    debug!("invalid base64");
+                    debug!("invalid base64 while decoding payload");
                     JwtError::InvalidBase64
                 })
                 .map(|payload| Jws {
@@ -201,7 +201,10 @@ impl FromStr for JwsCompact {
 
         let header: ProtectedHeader = general_purpose::URL_SAFE_NO_PAD
             .decode(hdr_str)
-            .map_err(|_| JwtError::InvalidBase64)
+            .map_err(|_| {
+                debug!("invalid base64 while decoding header");
+                JwtError::InvalidBase64
+            })
             .and_then(|bytes| {
                 serde_json::from_slice(&bytes).map_err(|e| {
                     debug!(?e, "invalid header format - invalid json");
@@ -242,7 +245,7 @@ impl FromStr for JwsCompact {
         let signature = general_purpose::URL_SAFE_NO_PAD
             .decode(sig_str)
             .map_err(|_| {
-                debug!("invalid base64");
+                debug!("invalid base64 when decoding signature");
                 JwtError::InvalidBase64
             })?;
 
