@@ -164,7 +164,7 @@ mod tests {
             .set_alg(JwaAlg::ES256)
             .build();
 
-        let jwts = jws_es256_signer.sign2(&jwt).expect("failed to sign jwt");
+        let jwts = jws_es256_signer.sign(&jwt).expect("failed to sign jwt");
 
         let jwt_str = jwts.to_string();
         trace!("{}", jwt_str);
@@ -197,7 +197,7 @@ mod tests {
             .set_alg(JwaAlg::HS256)
             .build();
 
-        let jwts = jws_hs256_verifier.sign2(&jwt).expect("failed to sign jwt");
+        let jwts = jws_hs256_verifier.sign(&jwt).expect("failed to sign jwt");
 
         let released = jws_hs256_verifier
             .verify(&jwts)

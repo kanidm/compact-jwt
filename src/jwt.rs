@@ -219,7 +219,7 @@ mod tests {
         let mut jws_hs256_signer =
             JwsHs256Signer::generate_hs256().expect("failed to construct signer.");
 
-        let jwts = jws_hs256_signer.sign2(&jwt).expect("failed to sign jwt");
+        let jwts = jws_hs256_signer.sign(&jwt).expect("failed to sign jwt");
 
         let jwtu = jwts.invalidate();
 

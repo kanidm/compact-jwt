@@ -232,7 +232,7 @@ mod tests {
             .get_verifier()
             .expect("failed to get verifier from signer");
 
-        let jwts = jws_es256_signer.sign2(&jwt).expect("failed to sign jwt");
+        let jwts = jws_es256_signer.sign(&jwt).expect("failed to sign jwt");
 
         let jwtu = jwts.invalidate();
 

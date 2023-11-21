@@ -149,7 +149,7 @@ impl JwsSigner for JwsRs256Signer {
         Ok(())
     }
 
-    fn sign2<V: JwsSignable>(&mut self, jws: &V) -> Result<V::Signed, JwtError> {
+    fn sign<V: JwsSignable>(&mut self, jws: &V) -> Result<V::Signed, JwtError> {
         let mut sign_data = jws.data()?;
 
         // Let the signer update the header as required.
@@ -421,7 +421,7 @@ mod tests {
 
         jws_rs256_signer.set_sign_option_embed_jwk(true);
 
-        let jwsc = jws_rs256_signer.sign2(&jws).expect("Failed to sign");
+        let jwsc = jws_rs256_signer.sign(&jws).expect("Failed to sign");
 
         assert!(jwsc.get_jwk_pubkey_url().is_none());
 

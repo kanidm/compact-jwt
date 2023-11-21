@@ -65,7 +65,7 @@
 //! let mut jws_es256_signer =
 //!     JwsEs256Signer::generate_es256().unwrap();
 //!
-//! let oidc_signed = jws_es256_signer.sign2(&oidc)
+//! let oidc_signed = jws_es256_signer.sign(&oidc)
 //!     .unwrap();
 //!
 //! // Get the signed formatted token string

@@ -86,7 +86,7 @@ impl JwsSigner for JwsHs256Signer {
         Ok(())
     }
 
-    fn sign2<V: JwsSignable>(&mut self, jws: &V) -> Result<V::Signed, JwtError> {
+    fn sign<V: JwsSignable>(&mut self, jws: &V) -> Result<V::Signed, JwtError> {
         let mut sign_data = jws.data()?;
 
         // Let the signer update the header as required.

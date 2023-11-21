@@ -21,7 +21,7 @@ pub trait JwsSigner {
     fn update_header(&mut self, header: &mut ProtectedHeader) -> Result<(), JwtError>;
 
     /// Perform the signature operation
-    fn sign2<V: JwsSignable>(&mut self, _jws: &V) -> Result<V::Signed, JwtError>;
+    fn sign<V: JwsSignable>(&mut self, _jws: &V) -> Result<V::Signed, JwtError>;
 }
 
 /// A trait allowing a signer to create it's corresponding verifier.
