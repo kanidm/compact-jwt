@@ -1,5 +1,5 @@
-// #![deny(warnings)]
-// #![warn(unused_extern_crates)]
+#![deny(warnings)]
+#![warn(unused_extern_crates)]
 // #![warn(missing_docs)]
 
 #![forbid(unsafe_code)]
