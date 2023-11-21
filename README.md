@@ -13,12 +13,15 @@ a limited set of use cases.
 When should I use this library?
 -------------------------------
 
-If you wish to create ECDSA signed JWT tokens, or verify ECDSA signed JWT tokens, this library is for you.
+If you are:
 
-If you are implementing OIDC as a relying party or authorisation server, this library is for you.
+* creating ECDSA signed JWT tokens, or verify ECDSA signed JWT tokens
+* implementing OIDC as a relying party or authorisation server
+* wanting to use HMAC signatures
+* needing a minimal secure JWS implementation, this library is for you
+* using TPM bound keys for signing JWTs
 
-If you want to use HMAC signatures, have a full JWS implementation, or have the non-compact (JSON)
-serialisation support, this library is not what you want.
+If you need non-compact JWS, or other complex use cases, this library is not for you.
 
 Why another JWT library?
 ------------------------
@@ -30,7 +33,7 @@ or design that conflicts with the project goals in Kanidm. Examples are:
 * Ring as the sole cryptographic provider - we need to use OpenSSL
 * Only supporting RSA/Weak cryptographic algos - We want to use ECDSA
 * Full JWS implementation - As mentioned, JWS has a number of sharp edges like alg=none
+* No library supports pkcs11 or TPMS - We aim to allow hardware security modules to store private keys
 
 As a result, nothing "fit" what we wanted, so we are making another library.
-
 
