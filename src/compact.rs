@@ -248,12 +248,12 @@ impl fmt::Display for JwsCompact {
 impl JwsVerifiable for JwsCompact {
     type Verified = Jws;
 
-    fn data<'a>(&'a self) -> JwsCompactVerifyData<'a> {
+    fn data(&self) -> JwsCompactVerifyData {
         JwsCompactVerifyData {
             header: &self.header,
-            hdr_bytes: &self.hdr_b64.as_bytes(),
-            payload_bytes: &self.payload_b64.as_bytes(),
-            signature_bytes: &self.signature.as_slice(),
+            hdr_bytes: self.hdr_b64.as_bytes(),
+            payload_bytes: self.payload_b64.as_bytes(),
+            signature_bytes: self.signature.as_slice(),
         }
     }
 
@@ -278,7 +278,7 @@ pub struct JwsCompactVerifyData<'a> {
 impl<'a> JwsCompactVerifyData<'a> {
     pub(crate) fn release(&self) -> Result<Jws, JwtError> {
         general_purpose::URL_SAFE_NO_PAD
-            .decode(&self.payload_bytes)
+            .decode(self.payload_bytes)
             .map_err(|_| {
                 debug!("invalid base64 while decoding payload");
                 JwtError::InvalidBase64

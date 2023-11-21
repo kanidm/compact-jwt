@@ -206,7 +206,7 @@ impl JwsVerifier for JwsX509Verifier {
                 JwtError::OpenSSLError
             })?;
 
-        let valid = verifier.verify(&signed_data.signature_bytes).map_err(|e| {
+        let valid = verifier.verify(signed_data.signature_bytes).map_err(|e| {
             debug!(?e);
             JwtError::OpenSSLError
         })?;

@@ -111,7 +111,7 @@ impl JwsEs256Signer {
         let kid = skey
             .private_key_to_der()
             .and_then(|der| hash::hash(digest, &der))
-            .map(|hashout| hex::encode(hashout))
+            .map(hex::encode)
             .map_err(|_| JwtError::OpenSSLError)?;
 
         Ok(JwsEs256Signer {
@@ -126,12 +126,10 @@ impl JwsEs256Signer {
     pub fn from_es256_der(der: &[u8]) -> Result<Self, JwtError> {
         let digest = hash::MessageDigest::sha256();
 
-        let kid = hash::hash(digest, der)
-            .map(|hashout| hex::encode(hashout))
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
-            })?;
+        let kid = hash::hash(digest, der).map(hex::encode).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
 
         let skey = ec::EcKey::private_key_from_der(der).map_err(|e| {
             debug!(?e);
@@ -254,7 +252,7 @@ impl JwsSigner for JwsEs256Signer {
                 debug!(?e);
                 JwtError::InvalidHeaderFormat
             })
-            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(&bytes))?;
+            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(bytes))?;
 
         let mut hasher = hash::Hasher::new(self.digest).map_err(|e| {
             debug!(?e);

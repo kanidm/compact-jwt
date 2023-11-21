@@ -36,12 +36,10 @@ impl JwsRs256Signer {
     pub fn from_rs256_der(der: &[u8]) -> Result<Self, JwtError> {
         let digest = hash::MessageDigest::sha256();
 
-        let kid = hash::hash(digest, der)
-            .map(|hashout| hex::encode(hashout))
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
-            })?;
+        let kid = hash::hash(digest, der).map(hex::encode).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
 
         let skey = rsa::Rsa::private_key_from_der(der).map_err(|e| {
             debug!(?e);
@@ -75,7 +73,7 @@ impl JwsRs256Signer {
         let kid = skey
             .private_key_to_der()
             .and_then(|der| hash::hash(digest, &der))
-            .map(|hashout| hex::encode(hashout))
+            .map(hex::encode)
             .map_err(|_| JwtError::OpenSSLError)?;
 
         Ok(JwsRs256Signer {
@@ -160,7 +158,7 @@ impl JwsSigner for JwsRs256Signer {
                 debug!(?e);
                 JwtError::InvalidHeaderFormat
             })
-            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(&bytes))?;
+            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(bytes))?;
 
         let key = pkey::PKey::from_rsa(self.skey.clone()).map_err(|e| {
             debug!(?e);
@@ -318,7 +316,7 @@ impl JwsVerifier for JwsRs256Verifier {
                 JwtError::OpenSSLError
             })?;
 
-        let valid = verifier.verify(&signed_data.signature_bytes).map_err(|e| {
+        let valid = verifier.verify(signed_data.signature_bytes).map_err(|e| {
             debug!(?e);
             JwtError::OpenSSLError
         })?;

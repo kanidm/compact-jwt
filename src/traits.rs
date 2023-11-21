@@ -46,7 +46,7 @@ pub trait JwsVerifiable {
     type Verified;
 
     /// Retrieve the inner data from the JwsCompact that is to be verified
-    fn data<'a>(&'a self) -> JwsCompactVerifyData<'a>;
+    fn data(&self) -> JwsCompactVerifyData<'_>;
 
     /// After the verification is complete, allow post-processing of the released payload
     fn post_process(&self, value: Jws) -> Result<Self::Verified, JwtError>;

@@ -141,7 +141,7 @@ where
 {
     type Verified = Jwt<V>;
 
-    fn data<'a>(&'a self) -> JwsCompactVerifyData<'a> {
+    fn data(&self) -> JwsCompactVerifyData<'_> {
         self.jwsc.data()
     }
 

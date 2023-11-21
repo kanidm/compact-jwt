@@ -162,7 +162,7 @@ impl FromStr for OidcUnverified {
 impl JwsVerifiable for OidcUnverified {
     type Verified = OidcExpUnverified;
 
-    fn data<'a>(&'a self) -> JwsCompactVerifyData<'a> {
+    fn data(&self) -> JwsCompactVerifyData<'_> {
         self.jwsc.data()
     }
 

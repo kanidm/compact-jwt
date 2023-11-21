@@ -28,9 +28,8 @@ impl JwsCompact {
     ///
     /// return [Ok(None)] if the jws object's header's x5c field isn't populated
     pub fn get_x5c_chain(&self) -> Result<Option<Vec<X509>>, JwtError> {
-        let fullchain = match &self.header.x5c {
-            Some(chain) => chain,
-            None => return Ok(None),
+        let Some(fullchain) = &self.header.x5c else {
+            return Ok(None);
         };
 
         let fullchain: Result<Vec<_>, _> = fullchain

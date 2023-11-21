@@ -41,7 +41,7 @@ impl JwsHs256Signer {
         })?;
 
         let kid = hash::hash(digest, &kid)
-            .map(|hashout| hex::encode(hashout))
+            .map(hex::encode)
             .map_err(|_| JwtError::OpenSSLError)?;
 
         Ok(JwsHs256Signer { kid, skey, digest })
@@ -97,7 +97,7 @@ impl JwsSigner for JwsHs256Signer {
                 debug!(?e);
                 JwtError::InvalidHeaderFormat
             })
-            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(&bytes))?;
+            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(bytes))?;
 
         let mut signer = sign::Signer::new(self.digest, &self.skey).map_err(|e| {
             debug!(?e);
