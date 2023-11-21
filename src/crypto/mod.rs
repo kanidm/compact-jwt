@@ -5,8 +5,6 @@ use base64::{engine::general_purpose, Engine as _};
 use openssl::x509::X509;
 
 use crate::compact::JwsCompact;
-use crate::jws::Jws;
-use crate::traits::*;
 
 mod es256;
 mod hs256;
@@ -14,11 +12,8 @@ mod rs256;
 mod x509;
 
 pub use es256::{JwsEs256Signer, JwsEs256Verifier};
-
 pub use hs256::JwsHs256Signer;
-
 pub use rs256::{JwsRs256Signer, JwsRs256Verifier};
-
 pub use x509::{JwsX509Verifier, JwsX509VerifierBuilder};
 
 impl JwsCompact {

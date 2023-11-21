@@ -3,7 +3,7 @@
 use crate::compact::{Jwk, JwsCompact, JwsCompactVerifyData};
 use crate::jws::{Jws, JwsCompactSign2Data, JwsSigned};
 
-use crate::traits::{JwsSignable, JwsSigner, JwsVerifiable, JwsVerifier};
+use crate::traits::{JwsSignable, JwsVerifiable};
 
 use crate::error::JwtError;
 use crate::{btreemap_empty, vec_empty};
@@ -173,6 +173,12 @@ impl JwsVerifiable for OidcUnverified {
 }
 
 impl OidcExpUnverified {
+    /// Verify the expiry of this OIDC Token. The token at this point has passed cryptographic
+    /// verification, and should have it's expiry validated.
+    ///
+    /// curtime represents the current time in seconds since the unix epoch.
+    ///
+    /// A curtime of `0` means that the exp will not be checked. This is not recommended.
     pub fn verify_exp(self, curtime: i64) -> Result<OidcToken, JwtError> {
         if self.oidc.exp != 0 && self.oidc.exp < curtime {
             Err(JwtError::OidcTokenExpired)
@@ -226,9 +232,9 @@ mod tests {
             claims: Default::default(),
         };
 
-        let mut jws_es256_signer =
+        let jws_es256_signer =
             JwsEs256Signer::generate_es256().expect("failed to construct signer.");
-        let mut jwk_es256_verifier = jws_es256_signer
+        let jwk_es256_verifier = jws_es256_signer
             .get_verifier()
             .expect("failed to get verifier from signer");
 

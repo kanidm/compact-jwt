@@ -8,7 +8,7 @@ use url::Url;
 
 use crate::error::JwtError;
 use crate::jws::Jws;
-use crate::traits::{JwsSignable, JwsVerifiable, JwsVerifier};
+use crate::traits::JwsVerifiable;
 use base64urlsafedata::Base64UrlSafeData;
 
 // https://datatracker.ietf.org/doc/html/rfc7515

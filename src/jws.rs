@@ -1,12 +1,11 @@
 //! JWS Implementation
 
-use crate::compact::{Jwk, JwsCompact, ProtectedHeader};
+use crate::compact::{JwsCompact, ProtectedHeader};
 use crate::error::JwtError;
-use crate::traits::{JwsSignable, JwsVerifiable, JwsVerifier};
+use crate::traits::JwsSignable;
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::str::FromStr;
 
 /// A signed jwt which can be converted to a string.
 pub struct JwsSigned {
@@ -146,9 +145,9 @@ mod tests {
     #[test]
     fn test_sign_and_validate_es256() {
         let _ = tracing_subscriber::fmt::try_init();
-        let mut jws_es256_signer =
+        let jws_es256_signer =
             JwsEs256Signer::generate_es256().expect("failed to construct signer.");
-        let mut jwk_es256_verifier = jws_es256_signer
+        let jwk_es256_verifier = jws_es256_signer
             .get_verifier()
             .expect("failed to get verifier from signer");
 
@@ -182,7 +181,7 @@ mod tests {
     #[test]
     fn test_sign_and_validate_hs256() {
         let _ = tracing_subscriber::fmt::try_init();
-        let mut jws_hs256_verifier =
+        let jws_hs256_verifier =
             JwsHs256Signer::generate_hs256().expect("failed to construct signer.");
 
         let inner = CustomExtension {
@@ -193,7 +192,7 @@ mod tests {
 
         let jwt = JwsBuilder::from(payload)
             .set_typ(Some("JWT"))
-            .set_kid(Some(JwsSigner::get_kid(&mut jws_hs256_verifier)))
+            .set_kid(Some(JwsSigner::get_kid(&jws_hs256_verifier)))
             .set_alg(JwaAlg::HS256)
             .build();
 
@@ -249,7 +248,7 @@ HMUfpIBvFSDJ3gyICh3WZlXi/EjJKSZp4A==
 
         let trust_root = x509::X509::from_pem(gsr1.as_bytes()).unwrap();
 
-        let mut jws_x509_verifier = JwsX509VerifierBuilder::new()
+        let jws_x509_verifier = JwsX509VerifierBuilder::new()
             .add_trust_root(trust_root)
             .add_fullchain(certs)
             .yolo()
@@ -277,7 +276,7 @@ HMUfpIBvFSDJ3gyICh3WZlXi/EjJKSZp4A==
 
         let jwk = jwsu.get_jwk_pubkey().unwrap();
 
-        let mut jws_es256_verifier = JwsEs256Verifier::try_from(jwk).unwrap();
+        let jws_es256_verifier = JwsEs256Verifier::try_from(jwk).unwrap();
 
         let _claims: std::collections::BTreeMap<String, serde_json::value::Value> =
             jws_es256_verifier

@@ -4,7 +4,7 @@ use crate::btreemap_empty;
 use crate::compact::{Jwk, JwsCompact, JwsCompactVerifyData};
 use crate::error::JwtError;
 use crate::jws::{Jws, JwsCompactSign2Data, JwsSigned};
-use crate::traits::{JwsSignable, JwsSigner, JwsVerifiable, JwsVerifier};
+use crate::traits::{JwsSignable, JwsVerifiable};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -216,7 +216,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut jws_hs256_signer =
+        let jws_hs256_signer =
             JwsHs256Signer::generate_hs256().expect("failed to construct signer.");
 
         let jwts = jws_hs256_signer.sign(&jwt).expect("failed to sign jwt");

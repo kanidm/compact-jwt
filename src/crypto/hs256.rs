@@ -73,11 +73,11 @@ impl TryFrom<&[u8]> for JwsHs256Signer {
 }
 
 impl JwsSigner for JwsHs256Signer {
-    fn get_kid(&mut self) -> &str {
+    fn get_kid(&self) -> &str {
         self.kid.as_str()
     }
 
-    fn update_header(&mut self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
+    fn update_header(&self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
         // Update the alg to match.
         header.alg = JwaAlg::HS256;
 
@@ -86,7 +86,7 @@ impl JwsSigner for JwsHs256Signer {
         Ok(())
     }
 
-    fn sign<V: JwsSignable>(&mut self, jws: &V) -> Result<V::Signed, JwtError> {
+    fn sign<V: JwsSignable>(&self, jws: &V) -> Result<V::Signed, JwtError> {
         let mut sign_data = jws.data()?;
 
         // Let the signer update the header as required.
@@ -130,7 +130,7 @@ impl JwsSigner for JwsHs256Signer {
 }
 
 impl JwsVerifier for JwsHs256Signer {
-    fn get_kid(&mut self) -> Option<&str> {
+    fn get_kid(&self) -> Option<&str> {
         Some(self.kid.as_str())
     }
 
@@ -210,7 +210,7 @@ mod tests {
         "AyM1SysPpbyDfgZld3umj1qzKObwVMkoqQ-EstJQLr_T-1qS0gZH75aKtMN3Yj0iPS4hcgUuTwjAzZr1Z9CAow"
         ).expect("Invalid key");
 
-        let mut jws_signer =
+        let jws_signer =
             JwsHs256Signer::try_from(skey.as_slice()).expect("Unable to create validator");
 
         let released = jws_signer.verify(&jwsc).expect("Unable to validate jws");
@@ -248,7 +248,7 @@ mod tests {
         "AyM1SysPpbyDfgZld3umj1qzKObwVMkoqQ-EstJQLr_T-1qS0gZH75aKtMN3Yj0iPS4hcgUuTwjAzZr1Z9CAow"
         ).expect("Invalid key");
 
-        let mut jws_signer =
+        let jws_signer =
             JwsHs256Signer::try_from(skey.as_slice()).expect("Unable to create validator");
 
         let released = jws_signer.verify(&jwsc).expect("Unable to validate jws");

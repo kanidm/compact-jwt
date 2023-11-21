@@ -1,11 +1,9 @@
 //! JWS Signing and Verification Structures
 
-use openssl::{hash, pkey, rsa, sign, x509};
-
+use crate::compact::JwaAlg;
 use crate::error::JwtError;
-
-use crate::compact::{JwaAlg, JwsCompact};
 use crate::traits::*;
+use openssl::{hash, pkey, rsa, sign, x509};
 
 /// A builder for a verifier that will be rooted in a trusted ca chain.
 #[derive(Default)]
@@ -164,7 +162,7 @@ pub struct JwsX509Verifier {
 }
 
 impl JwsVerifier for JwsX509Verifier {
-    fn get_kid(&mut self) -> Option<&str> {
+    fn get_kid(&self) -> Option<&str> {
         self.kid.as_deref()
     }
 

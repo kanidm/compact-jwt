@@ -26,8 +26,6 @@ pub struct JwsEs256Signer {
 impl JwsEs256Signer {
     #[cfg(test)]
     pub fn from_es256_jwk_components(x: &str, y: &str, d: &str) -> Result<Self, JwtError> {
-        use base64::{engine::general_purpose, Engine as _};
-
         let x = general_purpose::URL_SAFE_NO_PAD.decode(x).map_err(|e| {
             debug!(?e);
             JwtError::InvalidBase64
@@ -211,7 +209,7 @@ impl JwsEs256Signer {
 impl JwsSignerToVerifier for JwsEs256Signer {
     type Verifier = JwsEs256Verifier;
 
-    fn get_verifier(&mut self) -> Result<Self::Verifier, JwtError> {
+    fn get_verifier(&self) -> Result<Self::Verifier, JwtError> {
         ec::EcKey::from_public_key(self.skey.group(), self.skey.public_key())
             .map_err(|e| {
                 debug!(?e);
@@ -227,11 +225,11 @@ impl JwsSignerToVerifier for JwsEs256Signer {
 }
 
 impl JwsSigner for JwsEs256Signer {
-    fn get_kid(&mut self) -> &str {
+    fn get_kid(&self) -> &str {
         self.kid.as_str()
     }
 
-    fn update_header(&mut self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
+    fn update_header(&self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
         // Update the alg to match.
         header.alg = JwaAlg::ES256;
 
@@ -245,7 +243,7 @@ impl JwsSigner for JwsEs256Signer {
         Ok(())
     }
 
-    fn sign<V: JwsSignable>(&mut self, jws: &V) -> Result<V::Signed, JwtError> {
+    fn sign<V: JwsSignable>(&self, jws: &V) -> Result<V::Signed, JwtError> {
         let mut sign_data = jws.data()?;
 
         // Let the signer update the header as required.
@@ -373,7 +371,7 @@ impl TryFrom<&Jwk> for JwsEs256Verifier {
 }
 
 impl JwsVerifier for JwsEs256Verifier {
-    fn get_kid(&mut self) -> Option<&str> {
+    fn get_kid(&self) -> Option<&str> {
         self.kid.as_deref()
     }
 
@@ -480,7 +478,7 @@ mod tests {
         let pkey: Jwk = serde_json::from_str(pkey).expect("Invalid JWK");
         trace!("jwk -> {:?}", pkey);
 
-        let mut jwk_es256_verifier =
+        let jwk_es256_verifier =
             JwsEs256Verifier::try_from(&pkey).expect("Unable to create validator");
 
         let released = jwk_es256_verifier
@@ -493,7 +491,7 @@ mod tests {
     fn rfc7515_es256_signature_example() {
         let _ = tracing_subscriber::fmt::try_init();
         // https://docs.rs/openssl/0.10.36/openssl/ec/struct.EcKey.html#method.from_private_components
-        let mut jws_es256_signer = JwsEs256Signer::from_es256_jwk_components(
+        let jws_es256_signer = JwsEs256Signer::from_es256_jwk_components(
             "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
             "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
             "jpsQnnGQmL-YBIffH1136cspYG6-0iY7X1fCE9-E9LI",
@@ -518,7 +516,7 @@ mod tests {
         let pkey: Jwk = serde_json::from_str(pkey).expect("Invalid JWK");
         trace!("jwk -> {:?}", pkey);
 
-        let mut jwk_es256_verifier =
+        let jwk_es256_verifier =
             JwsEs256Verifier::try_from(&pkey).expect("Unable to create validator");
 
         let released = jwk_es256_verifier
@@ -528,7 +526,7 @@ mod tests {
         trace!("rel -> {:?}", released);
 
         // Test the verifier from the signer also works.
-        let mut jwk_es256_verifier = jws_es256_signer
+        let jwk_es256_verifier = jws_es256_signer
             .get_verifier()
             .expect("failed to get verifier from signer");
 
@@ -567,7 +565,7 @@ mod tests {
         let pub_jwk = jwsc.get_jwk_pubkey().expect("No embeded public jwk!");
         assert!(*pub_jwk == jws_es256_signer.public_key_as_jwk().unwrap());
 
-        let mut jwk_es256_verifier =
+        let jwk_es256_verifier =
             JwsEs256Verifier::try_from(pub_jwk).expect("Unable to create validator");
 
         let released = jwk_es256_verifier

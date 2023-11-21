@@ -111,7 +111,7 @@ impl JwsRs256Signer {
 impl JwsSignerToVerifier for JwsRs256Signer {
     type Verifier = JwsRs256Verifier;
 
-    fn get_verifier(&mut self) -> Result<Self::Verifier, JwtError> {
+    fn get_verifier(&self) -> Result<Self::Verifier, JwtError> {
         self.skey
             .n()
             .to_owned()
@@ -131,11 +131,11 @@ impl JwsSignerToVerifier for JwsRs256Signer {
 }
 
 impl JwsSigner for JwsRs256Signer {
-    fn get_kid(&mut self) -> &str {
+    fn get_kid(&self) -> &str {
         self.kid.as_str()
     }
 
-    fn update_header(&mut self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
+    fn update_header(&self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
         // Update the alg to match.
         header.alg = JwaAlg::RS256;
 
@@ -149,7 +149,7 @@ impl JwsSigner for JwsRs256Signer {
         Ok(())
     }
 
-    fn sign<V: JwsSignable>(&mut self, jws: &V) -> Result<V::Signed, JwtError> {
+    fn sign<V: JwsSignable>(&self, jws: &V) -> Result<V::Signed, JwtError> {
         let mut sign_data = jws.data()?;
 
         // Let the signer update the header as required.
@@ -277,7 +277,7 @@ impl TryFrom<&Jwk> for JwsRs256Verifier {
 }
 
 impl JwsVerifier for JwsRs256Verifier {
-    fn get_kid(&mut self) -> Option<&str> {
+    fn get_kid(&self) -> Option<&str> {
         self.kid.as_deref()
     }
 
@@ -393,8 +393,7 @@ mod tests {
         let pkey: Jwk = serde_json::from_str(pkey).expect("Invalid JWK");
         trace!("jwk -> {:?}", pkey);
 
-        let mut jws_validator =
-            JwsRs256Verifier::try_from(&pkey).expect("Unable to create validator");
+        let jws_validator = JwsRs256Verifier::try_from(&pkey).expect("Unable to create validator");
 
         let released = jws_validator.verify(&jwsc).expect("Unable to validate jws");
         trace!("rel -> {:?}", released);
@@ -428,7 +427,7 @@ mod tests {
         let pub_jwk = jwsc.get_jwk_pubkey().expect("No embeded public jwk!");
         assert!(*pub_jwk == jws_rs256_signer.public_key_as_jwk().unwrap());
 
-        let mut jws_validator = jws_rs256_signer
+        let jws_validator = jws_rs256_signer
             .get_verifier()
             .expect("Unable to create validator");
 
