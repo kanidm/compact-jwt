@@ -1,9 +1,9 @@
 [package]
 name = "compact_jwt"
-version = "0.2.10"
+version = "0.3.0"
 edition = "2021"
 authors = ["William Brown <william@blackhats.net.au>"]
-description = "Minimal implementation of JWT for OIDC"
+description = "Minimal implementation of JWT for OIDC and other applications"
 repository = "https://github.com/kanidm/compact_jwt"
 readme = "README.md"
 keywords = ["jwt", "authentication"]
@@ -17,13 +17,12 @@ default = ["openssl"]
 [dependencies]
 serde = { version = "^1.0.136", features = ["derive"] }
 serde_json = "^1.0.79"
-base64 = "^0.13.0"
+base64 = "^0.21.5"
 base64urlsafedata = "0.1.0"
 openssl = { version = "^0.10.38", optional = true }
 url = { version = "^2.2.2", features = ["serde"] }
 uuid = { version = "^1.0.0", features = ["serde"] }
 tracing = "^0.1.34"
-
 hex = "0.4"
 
 [dev-dependencies]

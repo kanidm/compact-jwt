@@ -2,6 +2,21 @@
 #![warn(unused_extern_crates)]
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
+// Enable some groups of clippy lints.
+#![deny(clippy::suspicious)]
+#![deny(clippy::perf)]
+// Specific lints to enforce.
+#![deny(clippy::todo)]
+#![deny(clippy::unimplemented)]
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::expect_used)]
+#![deny(clippy::panic)]
+#![deny(clippy::await_holding_lock)]
+#![deny(clippy::needless_pass_by_value)]
+#![deny(clippy::trivially_copy_pass_by_ref)]
+#![deny(clippy::disallowed_types)]
+#![deny(clippy::manual_let_else)]
+#![allow(clippy::unreachable)]
 
 //! Json Web Tokens (JWT) are a popular method for creating signed transparent tokens that can be verified
 //! by clients and servers. They are enshrined in standards like OpenID Connect which causes them to
@@ -17,7 +32,16 @@
 //! use std::convert::TryFrom;
 //! use std::time::SystemTime;
 //! use url::Url;
-//! use compact_jwt::{JwsValidator, JwsSigner, OidcToken, OidcSubject, OidcUnverified};
+//! use compact_jwt::{
+//!     OidcToken,
+//!     OidcSubject,
+//!     OidcUnverified,
+//!     JwsEs256Signer,
+//!     // Traits
+//!     JwsSigner,
+//!     JwsSignerToVerifier,
+//!     JwsVerifier,
+//! };
 //!
 //! let oidc = OidcToken {
 //!         iss: Url::parse("https://oidc.example.com").unwrap(),
@@ -37,10 +61,10 @@
 //! #       claims: Default::default(),
 //!     };
 //!
-//! let jws_signer = JwsSigner::generate_es256()
-//!     .unwrap();
+//! let mut jws_es256_signer =
+//!     JwsEs256Signer::generate_es256().unwrap();
 //!
-//! let oidc_signed = oidc.sign(&jws_signer)
+//! let oidc_signed = oidc.sign(&mut jws_es256_signer)
 //!     .unwrap();
 //!
 //! // Get the signed formatted token string
@@ -48,12 +72,11 @@
 //!
 //! // Build a validator from the public key of the signer. In a client scenario
 //! // you would get this public jwk from the oidc authorisation server.
-//! let public_jwk = jws_signer.public_key_as_jwk()
-//!     .unwrap();
-//! let jws_validator = JwsValidator::try_from(&public_jwk)
-//!     .unwrap();
+//! let mut jwk_es256_verifier = jws_es256_signer
+//!     .get_verifier()
+//!     .expect("failed to get verifier from signer");
 //!
-//! // Assuming we have the token_str, start to validate it.
+//! // Assuming we have the token_str, we parse it to an unverified state.
 //! let oidc_unverified = OidcUnverified::from_str(&token_str)
 //!     .unwrap();
 //!
@@ -63,7 +86,7 @@
 //!     .as_secs() as i64;
 //!
 //! let oidc_validated = oidc_unverified
-//!     .validate(&jws_validator, curtime)
+//!     .verify(&mut jwk_es256_verifier, curtime)
 //!     .unwrap();
 //!
 //! // Prove we got back the same content.
@@ -75,20 +98,31 @@
 #[macro_use]
 extern crate tracing;
 
+#[cfg(feature = "openssl")]
 pub mod crypto;
+
+#[cfg(feature = "unsafe_release_without_verify")]
+pub mod dangernoverify;
+
+pub mod compact;
+
+pub mod traits;
 
 pub mod error;
 pub mod jws;
 pub mod jwt;
 pub mod oidc;
 
-pub use crate::crypto::{JwaAlg, Jwk, JwkKeySet, JwkUse};
 #[cfg(feature = "openssl")]
-pub use crate::crypto::{JwsSigner, JwsValidator};
+pub use crate::crypto::{JwsEs256Signer, JwsEs256Verifier, JwsHs256Signer};
+
+pub use crate::compact::{JwaAlg, Jwk};
 pub use crate::error::JwtError;
 pub use crate::jws::{Jws, JwsSigned, JwsUnverified};
 pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};
 pub use crate::oidc::{OidcClaims, OidcSigned, OidcSubject, OidcToken, OidcUnverified};
+
+pub use crate::traits::{JwsSigner, JwsSignerToVerifier, JwsVerifier};
 
 pub(crate) fn btreemap_empty(
     m: &std::collections::BTreeMap<String, serde_json::value::Value>,

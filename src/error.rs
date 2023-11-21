@@ -34,6 +34,10 @@ pub enum JwtError {
     X5cPublicKeyDenied,
     /// Private key export denied
     PrivateKeyDenied,
+    /// No leaf certificate is available in the chain
+    X5cChainMissingLeaf,
+    /// The provided x5c chain is not trusted
+    X5cChainNotTrusted,
 }
 
 impl fmt::Display for JwtError {
