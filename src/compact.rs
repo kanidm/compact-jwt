@@ -264,12 +264,17 @@ impl JwsVerifiable for JwsCompact {
 
 /// Data that will be verified
 pub struct JwsCompactVerifyData<'a> {
+    #[allow(dead_code)]
     pub(crate) header: &'a ProtectedHeader,
+    #[allow(dead_code)]
     pub(crate) hdr_bytes: &'a [u8],
+    #[allow(dead_code)]
     pub(crate) payload_bytes: &'a [u8],
+    #[allow(dead_code)]
     pub(crate) signature_bytes: &'a [u8],
 }
 
+#[cfg(any(feature = "unsafe_release_without_verify", feature = "openssl"))]
 impl<'a> JwsCompactVerifyData<'a> {
     pub(crate) fn release(&self) -> Result<Jws, JwtError> {
         general_purpose::URL_SAFE_NO_PAD

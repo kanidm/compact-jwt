@@ -109,7 +109,9 @@ impl JwsSignable for Jws {
 
 /// Data that will be signed
 pub struct JwsCompactSign2Data {
+    #[allow(dead_code)]
     pub(crate) header: ProtectedHeader,
+    #[allow(dead_code)]
     pub(crate) payload_b64: String,
 }
 
