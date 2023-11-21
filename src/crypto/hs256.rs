@@ -5,6 +5,7 @@ use openssl::{hash, pkey, rand, sign};
 
 use crate::compact::{JwaAlg, JwsCompact, ProtectedHeader};
 use crate::traits::*;
+use base64::{engine::general_purpose, Engine as _};
 
 /// A JWS signer that creates HMAC SHA256 signatures.
 pub struct JwsHs256Signer {
@@ -85,25 +86,46 @@ impl JwsSigner for JwsHs256Signer {
         Ok(())
     }
 
-    fn sign(&mut self, jwsc: JwsCompactSignData<'_>) -> Result<Vec<u8>, JwtError> {
+    fn sign2<V: JwsSignable>(&mut self, jws: &V) -> Result<V::Signed, JwtError> {
+        let mut sign_data = jws.data()?;
+
+        // Let the signer update the header as required.
+        self.update_header(&mut sign_data.header)?;
+
+        let hdr_b64 = serde_json::to_vec(&sign_data.header)
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::InvalidHeaderFormat
+            })
+            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(&bytes))?;
+
         let mut signer = sign::Signer::new(self.digest, &self.skey).map_err(|e| {
             debug!(?e);
             JwtError::OpenSSLError
         })?;
 
         signer
-            .update(jwsc.hdr_bytes)
+            .update(hdr_b64.as_bytes())
             .and_then(|_| signer.update(".".as_bytes()))
-            .and_then(|_| signer.update(jwsc.payload_bytes))
+            .and_then(|_| signer.update(sign_data.payload_b64.as_bytes()))
             .map_err(|e| {
                 debug!(?e);
                 JwtError::OpenSSLError
             })?;
 
-        signer.sign_to_vec().map_err(|e| {
+        let signature = signer.sign_to_vec().map_err(|e| {
             debug!(?e);
             JwtError::OpenSSLError
-        })
+        })?;
+
+        let jwsc = JwsCompact {
+            header: sign_data.header,
+            hdr_b64,
+            payload_b64: sign_data.payload_b64,
+            signature,
+        };
+
+        jws.post_process(jwsc)
     }
 }
 
@@ -112,9 +134,11 @@ impl JwsVerifier for JwsHs256Signer {
         Some(self.kid.as_str())
     }
 
-    fn verify_signature(&mut self, jwsc: &JwsCompact) -> Result<bool, JwtError> {
-        if jwsc.header.alg != JwaAlg::HS256 {
-            debug!(jwsc_alg = ?jwsc.header.alg, "validator algorithm mismatch");
+    fn verify<V: JwsVerifiable>(&self, jwsc: &V) -> Result<V::Verified, JwtError> {
+        let signed_data = jwsc.data();
+
+        if signed_data.header.alg != JwaAlg::HS256 {
+            debug!(jwsc_alg = ?signed_data.header.alg, "validator algorithm mismatch");
             return Err(JwtError::ValidatorAlgMismatch);
         }
 
@@ -124,9 +148,9 @@ impl JwsVerifier for JwsHs256Signer {
         })?;
 
         signer
-            .update(jwsc.hdr_b64.as_bytes())
+            .update(signed_data.hdr_bytes)
             .and_then(|_| signer.update(".".as_bytes()))
-            .and_then(|_| signer.update(jwsc.payload_b64.as_bytes()))
+            .and_then(|_| signer.update(signed_data.payload_bytes))
             .map_err(|e| {
                 debug!(?e);
                 JwtError::OpenSSLError
@@ -137,7 +161,12 @@ impl JwsVerifier for JwsHs256Signer {
             JwtError::OpenSSLError
         })?;
 
-        Ok(jwsc.signature == ver_sig)
+        if signed_data.signature_bytes == ver_sig.as_slice() {
+            signed_data.release().and_then(|d| jwsc.post_process(d))
+        } else {
+            debug!("invalid signature");
+            Err(JwtError::InvalidSignature)
+        }
     }
 }
 
@@ -145,9 +174,48 @@ impl JwsVerifier for JwsHs256Signer {
 mod tests {
     use super::JwsHs256Signer;
     use crate::compact::JwsCompact;
+    use crate::traits::*;
     use base64::{engine::general_purpose, Engine as _};
     use std::convert::TryFrom;
     use std::str::FromStr;
+
+    #[test]
+    fn rfc7519_hs256_validation_example_legacy() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let test_jws = "eyJ0eXAiOiJKV1QiLA0KICJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS9pc19yb290Ijp0cnVlfQ.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+
+        let jwsc = JwsCompact::from_str(test_jws).unwrap();
+
+        assert!(jwsc.check_vectors(
+            &[
+                101, 121, 74, 48, 101, 88, 65, 105, 79, 105, 74, 75, 86, 49, 81, 105, 76, 65, 48,
+                75, 73, 67, 74, 104, 98, 71, 99, 105, 79, 105, 74, 73, 85, 122, 73, 49, 78, 105,
+                74, 57, 46, 101, 121, 74, 112, 99, 51, 77, 105, 79, 105, 74, 113, 98, 50, 85, 105,
+                76, 65, 48, 75, 73, 67, 74, 108, 101, 72, 65, 105, 79, 106, 69, 122, 77, 68, 65,
+                52, 77, 84, 107, 122, 79, 68, 65, 115, 68, 81, 111, 103, 73, 109, 104, 48, 100, 72,
+                65, 54, 76, 121, 57, 108, 101, 71, 70, 116, 99, 71, 120, 108, 76, 109, 78, 118, 98,
+                83, 57, 112, 99, 49, 57, 121, 98, 50, 57, 48, 73, 106, 112, 48, 99, 110, 86, 108,
+                102, 81
+            ],
+            &[
+                116, 24, 223, 180, 151, 153, 224, 37, 79, 250, 96, 125, 216, 173, 187, 186, 22,
+                212, 37, 77, 105, 214, 191, 240, 91, 88, 5, 88, 83, 132, 141, 121
+            ]
+        ));
+
+        assert!(jwsc.get_jwk_pubkey_url().is_none());
+        assert!(jwsc.get_jwk_pubkey().is_none());
+
+        let skey = general_purpose::URL_SAFE_NO_PAD.decode(
+        "AyM1SysPpbyDfgZld3umj1qzKObwVMkoqQ-EstJQLr_T-1qS0gZH75aKtMN3Yj0iPS4hcgUuTwjAzZr1Z9CAow"
+        ).expect("Invalid key");
+
+        let mut jws_signer =
+            JwsHs256Signer::try_from(skey.as_slice()).expect("Unable to create validator");
+
+        let released = jws_signer.verify(&jwsc).expect("Unable to validate jws");
+        trace!("rel -> {:?}", released);
+    }
 
     #[test]
     fn rfc7519_hs256_validation_example() {
@@ -183,9 +251,7 @@ mod tests {
         let mut jws_signer =
             JwsHs256Signer::try_from(skey.as_slice()).expect("Unable to create validator");
 
-        let released = jwsc
-            .verify(&mut jws_signer)
-            .expect("Unable to validate jws");
+        let released = jws_signer.verify(&jwsc).expect("Unable to validate jws");
         trace!("rel -> {:?}", released);
     }
 }

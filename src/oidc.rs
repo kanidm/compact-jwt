@@ -1,9 +1,9 @@
 //! Oidc token implementation
 
-use crate::compact::{Jwk, JwsCompact};
-use crate::jws::{Jws, JwsSigned, JwsUnverified};
+use crate::compact::{Jwk, JwsCompact, JwsCompactVerifyData};
+use crate::jws::{Jws, JwsCompactSign2Data, JwsSigned};
 
-use crate::traits::{JwsSigner, JwsVerifier};
+use crate::traits::{JwsSignable, JwsSigner, JwsVerifiable, JwsVerifier};
 
 use crate::error::JwtError;
 use crate::{btreemap_empty, vec_empty};
@@ -16,7 +16,12 @@ use uuid::Uuid;
 
 /// An unverified token input which is ready to validate
 pub struct OidcUnverified {
-    jws: JwsUnverified,
+    jwsc: JwsCompact,
+}
+
+/// An verified token that is awaiting expiry verification
+pub struct OidcExpUnverified {
+    oidc: OidcToken,
 }
 
 /// A signed oidc token which can be converted to a string.
@@ -116,50 +121,33 @@ pub struct OidcToken {
     pub claims: BTreeMap<String, serde_json::value::Value>,
 }
 
-#[cfg(feature = "openssl")]
-impl OidcToken {
-    /// Sign the content of this OIDC token with the provided signer
-    pub fn sign<S: JwsSigner>(&self, signer: &mut S) -> Result<OidcSigned, JwtError> {
+impl JwsSignable for OidcToken {
+    type Signed = OidcSigned;
+
+    fn data(&self) -> Result<JwsCompactSign2Data, JwtError> {
         let mut jwts = Jws::into_json(self).map_err(|_| JwtError::InvalidJwt)?;
 
         jwts.set_typ(Some("JWT"));
 
-        jwts.sign(signer).map(|jwsc| OidcSigned {
+        jwts.data()
+    }
+
+    fn post_process(&self, jwsc: JwsCompact) -> Result<Self::Signed, JwtError> {
+        Ok(OidcSigned {
             jws: JwsSigned { jwsc },
         })
     }
 }
 
 impl OidcUnverified {
-    /// Using this JwsVerifier, assert the correct signature of the data contained in
-    /// this token. The current time is represented by seconds since the epoch. You may
-    /// choose to ignore exp validation by setting this to 0, but this is DANGEROUS.
-    pub fn verify<K>(&self, verifier: &mut K, curtime: i64) -> Result<OidcToken, JwtError>
-    where
-        K: JwsVerifier,
-    {
-        let jws = self.jws.verify(verifier)?;
-
-        let tok: OidcToken = jws.from_json().map_err(|_| JwtError::InvalidJwt)?;
-
-        // Check the exp
-        if tok.exp != 0 && tok.exp < curtime {
-            Err(JwtError::OidcTokenExpired)
-        } else {
-            Ok(tok)
-        }
-    }
-}
-
-impl OidcUnverified {
     /// Get the embedded public key used to sign this jwt, if present.
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
-        self.jws.get_jwk_pubkey()
+        self.jwsc.get_jwk_pubkey()
     }
 
     /// Get the KID used to sign this Jws if present
     pub fn get_jwk_kid(&self) -> Option<&str> {
-        self.jws.get_jwk_kid()
+        self.jwsc.get_jwk_kid()
     }
 }
 
@@ -167,9 +155,30 @@ impl FromStr for OidcUnverified {
     type Err = JwtError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        JwsCompact::from_str(s).map(|jwsc| OidcUnverified {
-            jws: JwsUnverified { jwsc },
-        })
+        JwsCompact::from_str(s).map(|jwsc| OidcUnverified { jwsc })
+    }
+}
+
+impl JwsVerifiable for OidcUnverified {
+    type Verified = OidcExpUnverified;
+
+    fn data<'a>(&'a self) -> JwsCompactVerifyData<'a> {
+        self.jwsc.data()
+    }
+
+    fn post_process(&self, value: Jws) -> Result<Self::Verified, JwtError> {
+        let oidc: OidcToken = value.from_json().map_err(|_| JwtError::InvalidJwt)?;
+        Ok(OidcExpUnverified { oidc })
+    }
+}
+
+impl OidcExpUnverified {
+    pub fn verify_exp(self, curtime: i64) -> Result<OidcToken, JwtError> {
+        if self.oidc.exp != 0 && self.oidc.exp < curtime {
+            Err(JwtError::OidcTokenExpired)
+        } else {
+            Ok(self.oidc)
+        }
     }
 }
 
@@ -178,7 +187,7 @@ impl OidcSigned {
     /// again.
     pub fn invalidate(self) -> OidcUnverified {
         OidcUnverified {
-            jws: self.jws.invalidate(),
+            jwsc: self.jws.jwsc,
         }
     }
 }
@@ -193,7 +202,7 @@ impl fmt::Display for OidcSigned {
 mod tests {
     use super::{OidcSubject, OidcToken};
     use crate::crypto::JwsEs256Signer;
-    use crate::traits::JwsSignerToVerifier;
+    use crate::traits::{JwsSigner, JwsSignerToVerifier, JwsVerifier};
     use url::Url;
 
     #[test]
@@ -223,13 +232,15 @@ mod tests {
             .get_verifier()
             .expect("failed to get verifier from signer");
 
-        let jwts = jwt.sign(&mut jws_es256_signer).expect("failed to sign jwt");
+        let jwts = jws_es256_signer.sign2(&jwt).expect("failed to sign jwt");
 
         let jwtu = jwts.invalidate();
 
-        let released = jwtu
-            .verify(&mut jwk_es256_verifier, 0)
-            .expect("Unable to validate jwt");
+        let released = jwk_es256_verifier
+            .verify(&jwtu)
+            .expect("Unable to validate jwt")
+            .verify_exp(0)
+            .expect("Unable to validate oidc exp");
 
         assert!(released == jwt);
     }

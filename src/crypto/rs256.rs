@@ -4,6 +4,7 @@ use openssl::{bn, hash, pkey, rsa, sign};
 use std::convert::TryFrom;
 
 use crate::error::JwtError;
+use base64::{engine::general_purpose, Engine as _};
 use base64urlsafedata::Base64UrlSafeData;
 
 use crate::compact::{JwaAlg, Jwk, JwkUse, JwsCompact, ProtectedHeader};
@@ -148,7 +149,19 @@ impl JwsSigner for JwsRs256Signer {
         Ok(())
     }
 
-    fn sign(&mut self, jwsc: JwsCompactSignData<'_>) -> Result<Vec<u8>, JwtError> {
+    fn sign2<V: JwsSignable>(&mut self, jws: &V) -> Result<V::Signed, JwtError> {
+        let mut sign_data = jws.data()?;
+
+        // Let the signer update the header as required.
+        self.update_header(&mut sign_data.header)?;
+
+        let hdr_b64 = serde_json::to_vec(&sign_data.header)
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::InvalidHeaderFormat
+            })
+            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(&bytes))?;
+
         let key = pkey::PKey::from_rsa(self.skey.clone()).map_err(|e| {
             debug!(?e);
             JwtError::OpenSSLError
@@ -165,18 +178,27 @@ impl JwsSigner for JwsRs256Signer {
         })?;
 
         signer
-            .update(jwsc.hdr_bytes)
+            .update(hdr_b64.as_bytes())
             .and_then(|_| signer.update(".".as_bytes()))
-            .and_then(|_| signer.update(jwsc.payload_bytes))
+            .and_then(|_| signer.update(sign_data.payload_b64.as_bytes()))
             .map_err(|e| {
                 debug!(?e);
                 JwtError::OpenSSLError
             })?;
 
-        signer.sign_to_vec().map_err(|e| {
+        let signature = signer.sign_to_vec().map_err(|e| {
             debug!(?e);
             JwtError::OpenSSLError
-        })
+        })?;
+
+        let jwsc = JwsCompact {
+            header: sign_data.header,
+            hdr_b64,
+            payload_b64: sign_data.payload_b64,
+            signature,
+        };
+
+        jws.post_process(jwsc)
     }
 }
 
@@ -259,13 +281,15 @@ impl JwsVerifier for JwsRs256Verifier {
         self.kid.as_deref()
     }
 
-    fn verify_signature(&mut self, jwsc: &JwsCompact) -> Result<bool, JwtError> {
-        if jwsc.header.alg != JwaAlg::RS256 {
-            debug!(jwsc_alg = ?jwsc.header.alg, "validator algorithm mismatch");
+    fn verify<V: JwsVerifiable>(&self, jwsc: &V) -> Result<V::Verified, JwtError> {
+        let signed_data = jwsc.data();
+
+        if signed_data.header.alg != JwaAlg::RS256 {
+            debug!(jwsc_alg = ?signed_data.header.alg, "validator algorithm mismatch");
             return Err(JwtError::ValidatorAlgMismatch);
         }
 
-        if jwsc.signature.len() < 256 {
+        if signed_data.signature_bytes.len() < 256 {
             debug!("invalid signature length");
             return Err(JwtError::InvalidSignature);
         }
@@ -286,18 +310,25 @@ impl JwsVerifier for JwsRs256Verifier {
         })?;
 
         verifier
-            .update(jwsc.hdr_b64.as_bytes())
+            .update(signed_data.hdr_bytes)
             .and_then(|_| verifier.update(".".as_bytes()))
-            .and_then(|_| verifier.update(jwsc.payload_b64.as_bytes()))
+            .and_then(|_| verifier.update(signed_data.payload_bytes))
             .map_err(|e| {
                 debug!(?e);
                 JwtError::OpenSSLError
             })?;
 
-        verifier.verify(&jwsc.signature).map_err(|e| {
+        let valid = verifier.verify(&signed_data.signature_bytes).map_err(|e| {
             debug!(?e);
             JwtError::OpenSSLError
-        })
+        })?;
+
+        if valid {
+            signed_data.release().and_then(|d| jwsc.post_process(d))
+        } else {
+            debug!("invalid signature");
+            Err(JwtError::InvalidSignature)
+        }
     }
 }
 
@@ -365,9 +396,7 @@ mod tests {
         let mut jws_validator =
             JwsRs256Verifier::try_from(&pkey).expect("Unable to create validator");
 
-        let released = jwsc
-            .verify(&mut jws_validator)
-            .expect("Unable to validate jws");
+        let released = jws_validator.verify(&jwsc).expect("Unable to validate jws");
         trace!("rel -> {:?}", released);
     }
 
@@ -392,7 +421,7 @@ mod tests {
 
         jws_rs256_signer.set_sign_option_embed_jwk(true);
 
-        let jwsc = jws.sign(&mut jws_rs256_signer).expect("Failed to sign");
+        let jwsc = jws_rs256_signer.sign2(&jws).expect("Failed to sign");
 
         assert!(jwsc.get_jwk_pubkey_url().is_none());
 
@@ -403,9 +432,7 @@ mod tests {
             .get_verifier()
             .expect("Unable to create validator");
 
-        let released = jwsc
-            .verify(&mut jws_validator)
-            .expect("Unable to validate jws");
+        let released = jws_validator.verify(&jwsc).expect("Unable to validate jws");
         assert!(released.payload() == &[0, 1, 2, 3, 4]);
     }
 }

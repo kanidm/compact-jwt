@@ -8,7 +8,7 @@ use url::Url;
 
 use crate::error::JwtError;
 use crate::jws::Jws;
-use crate::traits::JwsVerifier;
+use crate::traits::{JwsSignable, JwsVerifiable, JwsVerifier};
 use base64urlsafedata::Base64UrlSafeData;
 
 // https://datatracker.ietf.org/doc/html/rfc7515
@@ -165,26 +165,6 @@ impl JwsCompact {
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
         self.header.jwk.as_ref()
     }
-
-    /// Using this JwsVerifier, assert the correct signature of the data contained in
-    /// this token.
-    pub fn verify<K: JwsVerifier>(&self, verifier: &mut K) -> Result<Jws, JwtError> {
-        if verifier.verify_signature(self)? {
-            general_purpose::URL_SAFE_NO_PAD
-                .decode(&self.payload_b64)
-                .map_err(|_| {
-                    debug!("invalid base64 while decoding payload");
-                    JwtError::InvalidBase64
-                })
-                .map(|payload| Jws {
-                    header: self.header.clone(),
-                    payload,
-                })
-        } else {
-            debug!("invalid signature");
-            Err(JwtError::InvalidSignature)
-        }
-    }
 }
 
 impl FromStr for JwsCompact {
@@ -262,5 +242,45 @@ impl fmt::Display for JwsCompact {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let sig = general_purpose::URL_SAFE_NO_PAD.encode(&self.signature);
         write!(f, "{}.{}.{}", self.hdr_b64, self.payload_b64, sig)
+    }
+}
+
+impl JwsVerifiable for JwsCompact {
+    type Verified = Jws;
+
+    fn data<'a>(&'a self) -> JwsCompactVerifyData<'a> {
+        JwsCompactVerifyData {
+            header: &self.header,
+            hdr_bytes: &self.hdr_b64.as_bytes(),
+            payload_bytes: &self.payload_b64.as_bytes(),
+            signature_bytes: &self.signature.as_slice(),
+        }
+    }
+
+    fn post_process(&self, value: Jws) -> Result<Self::Verified, JwtError> {
+        Ok(value)
+    }
+}
+
+/// Data that will be verified
+pub struct JwsCompactVerifyData<'a> {
+    pub(crate) header: &'a ProtectedHeader,
+    pub(crate) hdr_bytes: &'a [u8],
+    pub(crate) payload_bytes: &'a [u8],
+    pub(crate) signature_bytes: &'a [u8],
+}
+
+impl<'a> JwsCompactVerifyData<'a> {
+    pub(crate) fn release(&self) -> Result<Jws, JwtError> {
+        general_purpose::URL_SAFE_NO_PAD
+            .decode(&self.payload_bytes)
+            .map_err(|_| {
+                debug!("invalid base64 while decoding payload");
+                JwtError::InvalidBase64
+            })
+            .map(|payload| Jws {
+                header: self.header.clone(),
+                payload,
+            })
     }
 }

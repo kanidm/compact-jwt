@@ -168,19 +168,21 @@ impl JwsVerifier for JwsX509Verifier {
         self.kid.as_deref()
     }
 
-    fn verify_signature(&mut self, jwsc: &JwsCompact) -> Result<bool, JwtError> {
+    fn verify<V: JwsVerifiable>(&self, jwsc: &V) -> Result<V::Verified, JwtError> {
+        let signed_data = jwsc.data();
+
         let pkey = self.pkey.public_key().map_err(|e| {
             debug!(?e);
             JwtError::OpenSSLError
         })?;
 
         // Okay, the cert is valid, lets do this.
-        let digest = match (jwsc.header.alg, pkey.id()) {
+        let digest = match (signed_data.header.alg, pkey.id()) {
             (JwaAlg::RS256, pkey::Id::RSA) | (JwaAlg::ES256, pkey::Id::EC) => {
                 Ok(hash::MessageDigest::sha256())
             }
             _ => {
-                debug!(jwsc_alg = ?jwsc.header.alg, "validator algorithm mismatch");
+                debug!(jwsc_alg = ?signed_data.header.alg, "validator algorithm mismatch");
                 return Err(JwtError::ValidatorAlgMismatch);
             }
         }?;
@@ -190,7 +192,7 @@ impl JwsVerifier for JwsX509Verifier {
             JwtError::OpenSSLError
         })?;
 
-        if jwsc.header.alg == JwaAlg::RS256 {
+        if signed_data.header.alg == JwaAlg::RS256 {
             verifier.set_rsa_padding(rsa::Padding::PKCS1).map_err(|e| {
                 debug!(?e);
                 JwtError::OpenSSLError
@@ -198,17 +200,24 @@ impl JwsVerifier for JwsX509Verifier {
         }
 
         verifier
-            .update(jwsc.hdr_b64.as_bytes())
+            .update(signed_data.hdr_bytes)
             .and_then(|_| verifier.update(".".as_bytes()))
-            .and_then(|_| verifier.update(jwsc.payload_b64.as_bytes()))
+            .and_then(|_| verifier.update(signed_data.payload_bytes))
             .map_err(|e| {
                 debug!(?e);
                 JwtError::OpenSSLError
             })?;
 
-        verifier.verify(&jwsc.signature).map_err(|e| {
+        let valid = verifier.verify(&signed_data.signature_bytes).map_err(|e| {
             debug!(?e);
             JwtError::OpenSSLError
-        })
+        })?;
+
+        if valid {
+            signed_data.release().and_then(|d| jwsc.post_process(d))
+        } else {
+            debug!("invalid signature");
+            Err(JwtError::InvalidSignature)
+        }
     }
 }

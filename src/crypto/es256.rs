@@ -5,6 +5,7 @@ use std::convert::TryFrom;
 
 use crate::error::JwtError;
 
+use base64::{engine::general_purpose, Engine as _};
 use base64urlsafedata::Base64UrlSafeData;
 
 use crate::compact::{EcCurve, JwaAlg, Jwk, JwkUse, JwsCompact, ProtectedHeader};
@@ -244,16 +245,28 @@ impl JwsSigner for JwsEs256Signer {
         Ok(())
     }
 
-    fn sign(&mut self, jwsc: JwsCompactSignData<'_>) -> Result<Vec<u8>, JwtError> {
+    fn sign2<V: JwsSignable>(&mut self, jws: &V) -> Result<V::Signed, JwtError> {
+        let mut sign_data = jws.data()?;
+
+        // Let the signer update the header as required.
+        self.update_header(&mut sign_data.header)?;
+
+        let hdr_b64 = serde_json::to_vec(&sign_data.header)
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::InvalidHeaderFormat
+            })
+            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(&bytes))?;
+
         let mut hasher = hash::Hasher::new(self.digest).map_err(|e| {
             debug!(?e);
             JwtError::OpenSSLError
         })?;
 
         hasher
-            .update(jwsc.hdr_bytes)
+            .update(hdr_b64.as_bytes())
             .and_then(|_| hasher.update(".".as_bytes()))
-            .and_then(|_| hasher.update(jwsc.payload_bytes))
+            .and_then(|_| hasher.update(sign_data.payload_b64.as_bytes()))
             .map_err(|e| {
                 debug!(?e);
                 JwtError::OpenSSLError
@@ -284,7 +297,15 @@ impl JwsSigner for JwsEs256Signer {
         let mut signature = Vec::with_capacity(64);
         signature.extend_from_slice(&r);
         signature.extend_from_slice(&s);
-        Ok(signature)
+
+        let jwsc = JwsCompact {
+            header: sign_data.header,
+            hdr_b64,
+            payload_b64: sign_data.payload_b64,
+            signature,
+        };
+
+        jws.post_process(jwsc)
     }
 }
 
@@ -356,21 +377,23 @@ impl JwsVerifier for JwsEs256Verifier {
         self.kid.as_deref()
     }
 
-    fn verify_signature(&mut self, jwsc: &JwsCompact) -> Result<bool, JwtError> {
-        if jwsc.header.alg != JwaAlg::ES256 {
-            debug!(jwsc_alg = ?jwsc.header.alg, "validator algorithm mismatch");
+    fn verify<V: JwsVerifiable>(&self, jwsc: &V) -> Result<V::Verified, JwtError> {
+        let signed_data = jwsc.data();
+
+        if signed_data.header.alg != JwaAlg::ES256 {
+            debug!(jwsc_alg = ?signed_data.header.alg, "validator algorithm mismatch");
             return Err(JwtError::ValidatorAlgMismatch);
         }
 
-        if jwsc.signature.len() != 64 {
+        if signed_data.signature_bytes.len() != 64 {
             return Err(JwtError::InvalidSignature);
         }
 
-        let r = bn::BigNum::from_slice(&jwsc.signature[..32]).map_err(|e| {
+        let r = bn::BigNum::from_slice(&signed_data.signature_bytes[..32]).map_err(|e| {
             debug!(?e);
             JwtError::OpenSSLError
         })?;
-        let s = bn::BigNum::from_slice(&jwsc.signature[32..64]).map_err(|e| {
+        let s = bn::BigNum::from_slice(&signed_data.signature_bytes[32..64]).map_err(|e| {
             debug!(?e);
             JwtError::OpenSSLError
         })?;
@@ -386,9 +409,9 @@ impl JwsVerifier for JwsEs256Verifier {
         })?;
 
         hasher
-            .update(jwsc.hdr_b64.as_bytes())
+            .update(signed_data.hdr_bytes)
             .and_then(|_| hasher.update(".".as_bytes()))
-            .and_then(|_| hasher.update(jwsc.payload_b64.as_bytes()))
+            .and_then(|_| hasher.update(signed_data.payload_bytes))
             .map_err(|e| {
                 debug!(?e);
                 JwtError::OpenSSLError
@@ -399,10 +422,17 @@ impl JwsVerifier for JwsEs256Verifier {
             JwtError::OpenSSLError
         })?;
 
-        sig.verify(&hashout, &self.pkey).map_err(|e| {
+        let valid = sig.verify(&hashout, &self.pkey).map_err(|e| {
             debug!(?e);
             JwtError::OpenSSLError
-        })
+        })?;
+
+        if valid {
+            signed_data.release().and_then(|d| jwsc.post_process(d))
+        } else {
+            debug!("invalid signature");
+            Err(JwtError::InvalidSignature)
+        }
     }
 }
 
@@ -453,8 +483,8 @@ mod tests {
         let mut jwk_es256_verifier =
             JwsEs256Verifier::try_from(&pkey).expect("Unable to create validator");
 
-        let released = jwsc
-            .verify(&mut jwk_es256_verifier)
+        let released = jwk_es256_verifier
+            .verify(&jwsc)
             .expect("Unable to verify jws");
         trace!("rel -> {:?}", released);
     }
@@ -478,7 +508,7 @@ mod tests {
         ])
         .build();
 
-        let jwsc = jws.sign(&mut jws_es256_signer).expect("Failed to sign");
+        let jwsc = jws_es256_signer.sign2(&jws).expect("Failed to sign");
 
         assert!(jwsc.get_jwk_pubkey_url().is_none());
         assert!(jwsc.get_jwk_pubkey().is_none());
@@ -491,8 +521,8 @@ mod tests {
         let mut jwk_es256_verifier =
             JwsEs256Verifier::try_from(&pkey).expect("Unable to create validator");
 
-        let released = jwsc
-            .verify(&mut jwk_es256_verifier)
+        let released = jwk_es256_verifier
+            .verify(&jwsc)
             .expect("Unable to verify jws");
 
         trace!("rel -> {:?}", released);
@@ -502,8 +532,8 @@ mod tests {
             .get_verifier()
             .expect("failed to get verifier from signer");
 
-        let released = jwsc
-            .verify(&mut jwk_es256_verifier)
+        let released = jwk_es256_verifier
+            .verify(&jwsc)
             .expect("Unable to verify jws");
 
         trace!("rel -> {:?}", released);
@@ -531,7 +561,7 @@ mod tests {
 
         jws_es256_signer.set_sign_option_embed_jwk(true);
 
-        let jwsc = jws.sign(&mut jws_es256_signer).expect("Failed to sign");
+        let jwsc = jws_es256_signer.sign2(&jws).expect("Failed to sign");
 
         assert!(jwsc.get_jwk_pubkey_url().is_none());
         let pub_jwk = jwsc.get_jwk_pubkey().expect("No embeded public jwk!");
@@ -540,8 +570,8 @@ mod tests {
         let mut jwk_es256_verifier =
             JwsEs256Verifier::try_from(pub_jwk).expect("Unable to create validator");
 
-        let released = jwsc
-            .verify(&mut jwk_es256_verifier)
+        let released = jwk_es256_verifier
+            .verify(&jwsc)
             .expect("Unable to validate jws");
         assert!(released.payload() == &[0, 1, 2, 3, 4]);
     }

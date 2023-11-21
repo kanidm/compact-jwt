@@ -1,6 +1,7 @@
-#![deny(warnings)]
-#![warn(unused_extern_crates)]
-#![warn(missing_docs)]
+// #![deny(warnings)]
+// #![warn(unused_extern_crates)]
+// #![warn(missing_docs)]
+
 #![forbid(unsafe_code)]
 // Enable some groups of clippy lints.
 #![deny(clippy::suspicious)]
@@ -64,7 +65,7 @@
 //! let mut jws_es256_signer =
 //!     JwsEs256Signer::generate_es256().unwrap();
 //!
-//! let oidc_signed = oidc.sign(&mut jws_es256_signer)
+//! let oidc_signed = jws_es256_signer.sign2(&oidc)
 //!     .unwrap();
 //!
 //! // Get the signed formatted token string
@@ -85,8 +86,9 @@
 //!     .expect("Failed to retrieve current time")
 //!     .as_secs() as i64;
 //!
-//! let oidc_validated = oidc_unverified
-//!     .verify(&mut jwk_es256_verifier, curtime)
+//! let oidc_validated = jwk_es256_verifier
+//!     .verify(&oidc_unverified)
+//!     .and_then(|oidc_exp| oidc_exp.verify_exp(curtime))
 //!     .unwrap();
 //!
 //! // Prove we got back the same content.
@@ -116,9 +118,9 @@ pub mod oidc;
 #[cfg(feature = "openssl")]
 pub use crate::crypto::{JwsEs256Signer, JwsEs256Verifier, JwsHs256Signer};
 
-pub use crate::compact::{JwaAlg, Jwk};
+pub use crate::compact::{JwaAlg, Jwk, JwsCompact};
 pub use crate::error::JwtError;
-pub use crate::jws::{Jws, JwsSigned, JwsUnverified};
+pub use crate::jws::{Jws, JwsSigned};
 pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};
 pub use crate::oidc::{OidcClaims, OidcSigned, OidcSubject, OidcToken, OidcUnverified};
 

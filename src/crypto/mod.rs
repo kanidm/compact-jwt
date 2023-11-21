@@ -58,36 +58,3 @@ impl JwsCompact {
         Ok(Some(fullchain))
     }
 }
-
-impl Jws {
-    /// Sign the content of this JWS with the provided signer, yielding a compact
-    /// signed string.
-    pub fn sign<S: JwsSigner>(&self, signer: &mut S) -> Result<JwsCompact, JwtError> {
-        let mut header = self.header.clone();
-
-        // Let the signer update the header as required.
-        signer.update_header(&mut header)?;
-
-        let hdr_b64 = serde_json::to_vec(&header)
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::InvalidHeaderFormat
-            })
-            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(&bytes))?;
-        let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(&self.payload);
-
-        let data = JwsCompactSignData {
-            hdr_bytes: hdr_b64.as_bytes(),
-            payload_bytes: payload_b64.as_bytes(),
-        };
-
-        let signature = signer.sign(data)?;
-
-        Ok(JwsCompact {
-            header,
-            hdr_b64,
-            payload_b64,
-            signature,
-        })
-    }
-}
