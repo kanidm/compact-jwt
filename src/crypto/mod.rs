@@ -11,10 +11,16 @@ mod hs256;
 mod rs256;
 mod x509;
 
+#[cfg(feature = "hsm-crypto")]
+mod tpm;
+
 pub use es256::{JwsEs256Signer, JwsEs256Verifier};
 pub use hs256::JwsHs256Signer;
 pub use rs256::{JwsRs256Signer, JwsRs256Verifier};
 pub use x509::{JwsX509Verifier, JwsX509VerifierBuilder};
+
+#[cfg(feature = "hsm-crypto")]
+pub use tpm::JwsTpmSigner;
 
 impl JwsCompact {
     #[cfg(test)]
