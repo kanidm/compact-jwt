@@ -1,18 +1,20 @@
 //! Jwt implementation
 
 use crate::btreemap_empty;
-use crate::compact::Jwk;
+use crate::compact::{Jwk, JwsCompact, JwsCompactVerifyData};
 use crate::error::JwtError;
-use crate::jws::{Jws, JwsSigned, JwsUnverified};
-use crate::traits::{JwsSigner, JwsVerifier};
+use crate::jws::{Jws, JwsCompactSign2Data, JwsSigned};
+use crate::traits::{JwsSignable, JwsVerifiable};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::marker::PhantomData;
 use std::str::FromStr;
 
 /// An unverified jwt input which is ready to validate
-pub struct JwtUnverified {
-    jws: JwsUnverified,
+pub struct JwtUnverified<V> {
+    jwsc: JwsCompact,
+    _v: PhantomData<V>,
 }
 
 /// A signed jwt which can be converted to a string.
@@ -112,61 +114,75 @@ where
     }
 }
 
-#[cfg(feature = "openssl")]
-impl<V> Jwt<V>
+impl<V> JwsSignable for Jwt<V>
 where
     V: Clone + Serialize,
 {
-    /// Sign the content of this JWT token with the provided signer
-    pub fn sign<S: JwsSigner>(&self, signer: &mut S) -> Result<JwtSigned, JwtError> {
+    type Signed = JwtSigned;
+
+    fn data(&self) -> Result<JwsCompactSign2Data, JwtError> {
         let mut jwts = Jws::into_json(self).map_err(|_| JwtError::InvalidJwt)?;
 
         jwts.set_typ(Some("JWT"));
 
-        jwts.sign(signer).map(|jwsc| JwtSigned {
+        jwts.data()
+    }
+
+    fn post_process(&self, jwsc: JwsCompact) -> Result<Self::Signed, JwtError> {
+        Ok(JwtSigned {
             jws: JwsSigned { jwsc },
         })
     }
 }
 
-impl JwtUnverified {
-    /// Using this JwsVerifier, assert the correct signature of the data contained in
-    /// this token.
-    pub fn verify<K, V>(&self, verifier: &mut K) -> Result<Jwt<V>, JwtError>
-    where
-        K: JwsVerifier,
-        V: Clone + DeserializeOwned,
-    {
-        let jws = self.jws.verify(verifier)?;
+impl<V> JwsVerifiable for JwtUnverified<V>
+where
+    V: Clone + DeserializeOwned,
+{
+    type Verified = Jwt<V>;
 
-        jws.from_json().map_err(|_| JwtError::InvalidJwt)
+    fn data(&self) -> JwsCompactVerifyData<'_> {
+        self.jwsc.data()
     }
 
+    fn post_process(&self, value: Jws) -> Result<Self::Verified, JwtError> {
+        value.from_json().map_err(|_| JwtError::InvalidJwt)
+    }
+}
+
+impl<V> JwtUnverified<V>
+where
+    V: Clone + DeserializeOwned,
+{
     /// Get the embedded public key used to sign this jwt, if present.
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
-        self.jws.get_jwk_pubkey()
+        self.jwsc.get_jwk_pubkey()
     }
 
     /// Get the KID used to sign this Jws if present
     pub fn get_jwk_kid(&self) -> Option<&str> {
-        self.jws.get_jwk_kid()
+        self.jwsc.get_jwk_kid()
     }
 }
 
-impl FromStr for JwtUnverified {
+impl<V> FromStr for JwtUnverified<V> {
     type Err = JwtError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        JwsUnverified::from_str(s).map(|jws| JwtUnverified { jws })
+        JwsCompact::from_str(s).map(|jwsc| JwtUnverified {
+            jwsc,
+            _v: PhantomData,
+        })
     }
 }
 
 impl JwtSigned {
     /// Invalidate this signed jwt, causing it to require validation before you can use it
     /// again.
-    pub fn invalidate(self) -> JwtUnverified {
+    pub fn invalidate<V>(self) -> JwtUnverified<V> {
         JwtUnverified {
-            jws: self.jws.invalidate(),
+            jwsc: self.jws.jwsc,
+            _v: PhantomData,
         }
     }
 }
@@ -180,8 +196,8 @@ impl fmt::Display for JwtSigned {
 #[cfg(all(feature = "openssl", test))]
 mod tests {
     use super::Jwt;
-    use crate::crypto::JwsEs256Signer;
-    use crate::traits::JwsSignerToVerifier;
+    use crate::crypto::JwsHs256Signer;
+    use crate::traits::*;
     use serde::{Deserialize, Serialize};
 
     #[derive(Default, Debug, Serialize, Clone, Deserialize, PartialEq)]
@@ -200,18 +216,15 @@ mod tests {
             ..Default::default()
         };
 
-        let mut jws_es256_signer =
-            JwsEs256Signer::generate_es256().expect("failed to construct signer.");
-        let mut jwk_es256_verifier = jws_es256_signer
-            .get_verifier()
-            .expect("failed to get verifier from signer");
+        let jws_hs256_signer =
+            JwsHs256Signer::generate_hs256().expect("failed to construct signer.");
 
-        let jwts = jwt.sign(&mut jws_es256_signer).expect("failed to sign jwt");
+        let jwts = jws_hs256_signer.sign(&jwt).expect("failed to sign jwt");
 
         let jwtu = jwts.invalidate();
 
-        let released = jwtu
-            .verify(&mut jwk_es256_verifier)
+        let released = jws_hs256_signer
+            .verify(&jwtu)
             .expect("Unable to validate jwt");
 
         assert!(released == jwt);
