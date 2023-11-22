@@ -4,6 +4,12 @@ use crate::traits::*;
 use base64::{engine::general_purpose, Engine as _};
 use kanidm_hsm_crypto::{IdentityKey, KeyAlgorithm, Tpm};
 
+/// A JWS signer that uses a TPM protected key for signing operations.
+///
+/// Due to the construction of TPM's, this struct is intended to be "short lived"
+/// relying on references to the TPM rather than taking ownership of it. This means
+/// unlike other Signer types, you will need to build this struct each time you want
+/// to perform a signing operation in most cases.
 pub struct JwsTpmSigner<'a, T: Tpm> {
     kid: String,
     tpm: &'a mut T,
@@ -14,6 +20,8 @@ impl<'a, T> JwsTpmSigner<'a, T>
 where
     T: Tpm,
 {
+    /// Create a new JwsTpmSigner that will use the provided Identity Key for signing
+    /// operations.
     pub fn new(tpm: &'a mut T, id_key: &'a IdentityKey) -> Result<Self, JwtError> {
         let kid = tpm
             .identity_key_id(id_key)
