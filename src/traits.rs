@@ -18,6 +18,20 @@ pub trait JwsSigner {
     fn sign<V: JwsSignable>(&self, _jws: &V) -> Result<V::Signed, JwtError>;
 }
 
+/// A trait defining how a JwsSigner will operate.
+///
+/// Note that due to the design of this api, you can NOT define your own signer.
+pub trait JwsMutSigner {
+    /// Get the key id from this signer
+    fn get_kid(&mut self) -> &str;
+
+    /// Update thee content of the header with signer specific data
+    fn update_header(&mut self, header: &mut ProtectedHeader) -> Result<(), JwtError>;
+
+    /// Perform the signature operation
+    fn sign<V: JwsSignable>(&mut self, _jws: &V) -> Result<V::Signed, JwtError>;
+}
+
 /// A trait allowing a signer to create it's corresponding verifier.
 ///
 /// Note that due to the design of this api, you can NOT define your own signer or verifier.
@@ -38,6 +52,17 @@ pub trait JwsVerifier {
 
     /// Perform the signature verification
     fn verify<V: JwsVerifiable>(&self, _jwsc: &V) -> Result<V::Verified, JwtError>;
+}
+
+/// A trait defining how a JwsVerifier will operate.
+///
+/// Note that due to the design of this api, you can NOT define your own verifier.
+pub trait JwsMutVerifier {
+    /// Get the key id from this verifier
+    fn get_kid(&mut self) -> Option<&str>;
+
+    /// Perform the signature verification
+    fn verify<V: JwsVerifiable>(&mut self, _jwsc: &V) -> Result<V::Verified, JwtError>;
 }
 
 /// A trait defining types that can be verified by a [JwsVerifier]

@@ -20,6 +20,8 @@ pub enum JwtError {
     CriticalExtension,
     /// OpenSSL failure
     OpenSSLError,
+    /// Tpm Failure
+    TpmError,
     /// Incorrect Algorithm for verification
     ValidatorAlgMismatch,
     /// Invalid JWT Key ID
