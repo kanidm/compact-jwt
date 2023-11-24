@@ -3,11 +3,15 @@
 use crate::error::JwtError;
 use openssl::{hash, pkey, rand, sign};
 
+use std::fmt;
+use std::hash::{Hash, Hasher};
+
 use crate::compact::{JwaAlg, JwsCompact, ProtectedHeader};
 use crate::traits::*;
 use base64::{engine::general_purpose, Engine as _};
 
 /// A JWS signer that creates HMAC SHA256 signatures.
+#[derive(Clone)]
 pub struct JwsHs256Signer {
     /// The KID of this signer. This is the sha256 digest of the key.
     kid: String,
@@ -15,6 +19,28 @@ pub struct JwsHs256Signer {
     skey: pkey::PKey<pkey::Private>,
     /// The matching digest
     digest: hash::MessageDigest,
+}
+
+impl fmt::Debug for JwsHs256Signer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("JwsHs256Signer")
+            .field("kid", &self.kid)
+            .finish()
+    }
+}
+
+impl PartialEq for JwsHs256Signer {
+    fn eq(&self, other: &Self) -> bool {
+        self.kid == other.kid
+    }
+}
+
+impl Eq for JwsHs256Signer {}
+
+impl Hash for JwsHs256Signer {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.kid.hash(state);
+    }
 }
 
 impl JwsHs256Signer {

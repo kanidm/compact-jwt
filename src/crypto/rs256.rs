@@ -3,6 +3,9 @@
 use openssl::{bn, hash, pkey, rsa, sign};
 use std::convert::TryFrom;
 
+use std::fmt;
+use std::hash::{Hash, Hasher};
+
 use crate::error::JwtError;
 use base64::{engine::general_purpose, Engine as _};
 use base64urlsafedata::Base64UrlSafeData;
@@ -14,6 +17,7 @@ const RSA_MIN_SIZE: u32 = 3072;
 const RSA_SIG_SIZE: i32 = 384;
 
 /// A JWS signer that creates RSA SHA256 signatures.
+#[derive(Clone)]
 pub struct JwsRs256Signer {
     /// If the public jwk should be embeded during signing
     sign_option_embed_jwk: bool,
@@ -25,11 +29,34 @@ pub struct JwsRs256Signer {
     digest: hash::MessageDigest,
 }
 
+impl fmt::Debug for JwsRs256Signer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("JwsRs256Signer")
+            .field("kid", &self.kid)
+            .finish()
+    }
+}
+
+impl PartialEq for JwsRs256Signer {
+    fn eq(&self, other: &Self) -> bool {
+        self.kid == other.kid
+    }
+}
+
+impl Eq for JwsRs256Signer {}
+
+impl Hash for JwsRs256Signer {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.kid.hash(state);
+    }
+}
+
 impl JwsRs256Signer {
     /// Enable or disable embedding of the public jwk into the Jws that are signed
     /// by this signer
-    pub fn set_sign_option_embed_jwk(&mut self, value: bool) {
+    pub fn set_sign_option_embed_jwk(mut self, value: bool) -> Self {
         self.sign_option_embed_jwk = value;
+        self
     }
 
     /// Restore this JwsSignerEnum from a DER private key.
@@ -200,7 +227,8 @@ impl JwsSigner for JwsRs256Signer {
     }
 }
 
-/// A JWS verifier that creates RSA SHA256 signatures.
+/// A JWS verifier that verifies RSA SHA256 signatures.
+#[derive(Clone)]
 pub struct JwsRs256Verifier {
     /// The KID of this validator
     kid: Option<String>,
@@ -407,16 +435,15 @@ mod tests {
             .private_key_to_der()
             .expect("Failed to extract DER");
 
-        let mut jws_rs256_signer =
-            JwsRs256Signer::from_rs256_der(&der).expect("Failed to restore signer");
+        let jws_rs256_signer = JwsRs256Signer::from_rs256_der(&der)
+            .expect("Failed to restore signer")
+            .set_sign_option_embed_jwk(true);
 
         // This time we'll add the jwk pubkey and show it being used with the validator.
         let jws = JwsBuilder::from(vec![0, 1, 2, 3, 4])
             .set_typ(Some("abcd"))
             .set_cty(Some("abcd"))
             .build();
-
-        jws_rs256_signer.set_sign_option_embed_jwk(true);
 
         let jwsc = jws_rs256_signer.sign(&jws).expect("Failed to sign");
 
