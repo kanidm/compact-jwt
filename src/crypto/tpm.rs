@@ -148,7 +148,7 @@ mod tests {
 
         // Setup the tpm
         let mut softtpm = SoftTpm::new();
-        let auth_value = AuthValue::new_random().unwrap();
+        let auth_value = AuthValue::ephemeral().unwrap();
 
         let loadable_machine_key = softtpm.machine_key_create(&auth_value).unwrap();
 
