@@ -137,7 +137,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::JwsTpmSigner;
-    use kanidm_hsm_crypto::{soft::SoftTpm, AuthValue, KeyAlgorithm, Tpm};
+    use kanidm_hsm_crypto::{soft::SoftTpm, AuthValue, BoxedDynTpm, KeyAlgorithm, Tpm};
     // use crate::compact::{Jwk, JwsCompact};
     use crate::jws::JwsBuilder;
     use crate::traits::*;
@@ -148,6 +148,50 @@ mod tests {
 
         // Setup the tpm
         let mut softtpm = SoftTpm::new();
+        let auth_value = AuthValue::ephemeral().unwrap();
+
+        let loadable_machine_key = softtpm.machine_key_create(&auth_value).unwrap();
+
+        let machine_key = softtpm
+            .machine_key_load(&auth_value, &loadable_machine_key)
+            .unwrap();
+
+        let loadable_id_key = softtpm
+            .identity_key_create(&machine_key, KeyAlgorithm::Ecdsa256)
+            .unwrap();
+
+        let id_key = softtpm
+            .identity_key_load(&machine_key, &loadable_id_key)
+            .unwrap();
+
+        let mut jws_tpm_signer =
+            JwsTpmSigner::new(&mut softtpm, &id_key).expect("failed to construct signer.");
+
+        // This time we'll add the jwk pubkey and show it being used with the validator.
+        let jws = JwsBuilder::from(vec![0, 1, 2, 3, 4])
+            .set_kid(Some("abcd"))
+            .set_typ(Some("abcd"))
+            .set_cty(Some("abcd"))
+            .build();
+
+        // jws_tpm_signer.set_sign_option_embed_jwk(true);
+
+        let jwsc = jws_tpm_signer.sign(&jws).expect("Failed to sign");
+
+        let released = jws_tpm_signer
+            .verify(&jwsc)
+            .expect("Unable to validate jws");
+        assert!(released.payload() == &[0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn tpm_dyn_trait_object_cycle() {
+        let _ = tracing_subscriber::fmt::try_init();
+
+        // Setup the tpm
+        let mut softtpm: BoxedDynTpm = BoxedDynTpm::new(SoftTpm::new());
+        // let mut softtpm: &mut BoxedDynTpm = &mut box_softtpm;
+
         let auth_value = AuthValue::ephemeral().unwrap();
 
         let loadable_machine_key = softtpm.machine_key_create(&auth_value).unwrap();
