@@ -42,7 +42,10 @@ where
 
     fn update_header(&mut self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
         // Update the alg to match.
-        header.alg = JwaAlg::ES256;
+        match self.id_key.alg() {
+            KeyAlgorithm::Ecdsa256 => header.alg = JwaAlg::ES256,
+            KeyAlgorithm::Rsa2048 => header.alg = JwaAlg::RS256,
+        }
 
         header.kid = Some(self.kid.clone());
 
