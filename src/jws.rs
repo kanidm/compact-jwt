@@ -52,6 +52,16 @@ impl JwsBuilder {
         self
     }
 
+    /// Set the chain of certificates
+    pub fn set_x5c(mut self, x5c: Option<Vec<Vec<u8>>>) -> Self {
+        self.header.x5c = x5c.map(|v| {
+            v.into_iter()
+                .map(|c| general_purpose::STANDARD.encode(c))
+                .collect()
+        });
+        self
+    }
+
     /// Finalise this builder
     pub fn build(self) -> Jws {
         let JwsBuilder { header, payload } = self;
