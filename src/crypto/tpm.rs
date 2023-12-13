@@ -47,7 +47,33 @@ where
             KeyAlgorithm::Rsa2048 => header.alg = JwaAlg::RS256,
         }
 
-        header.kid = Some(self.kid.clone());
+        // Only set the kid if we don't have an x509 cert for the x5c
+        match self.id_key {
+            IdentityKey::SoftEcdsa256 {
+                pkey: _,
+                x509: Some(x509),
+            }
+            | IdentityKey::SoftRsa2048 {
+                pkey: _,
+                x509: Some(x509),
+            } => {
+                header.x5c = Some(vec![general_purpose::STANDARD.encode(
+                    match x509.to_der() {
+                        Ok(der) => der,
+                        Err(ossl_err) => {
+                            error!(?ossl_err);
+                            return Err(JwtError::OpenSSLError);
+                        }
+                    },
+                )])
+            }
+            _ => {
+                // Only set the kid if it wasn't set previously with JwsBuilder.set_x5c()
+                if let None = header.x5c {
+                    header.kid = Some(self.kid.clone());
+                }
+            }
+        }
 
         // if were were asked to ember the jwk, do so now.
         /*
