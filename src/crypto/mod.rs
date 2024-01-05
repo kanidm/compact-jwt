@@ -4,17 +4,20 @@ use crate::error::JwtError;
 use base64::{engine::general_purpose, Engine as _};
 use openssl::x509::X509;
 
-use crate::compact::{JweCompact, JwsCompact};
+use crate::compact::{JweCompact, JweEnc, JwsCompact};
 
 mod es256;
 mod hs256;
 mod rs256;
 mod x509;
 
-// mod rsaes_oaep;
+mod rsaes_oaep;
 
 mod a128cbc_hs256;
+mod a128gcm;
 mod a128kw;
+mod a256gcm;
+mod a256kw;
 
 #[cfg(feature = "hsm-crypto")]
 mod tpm;
@@ -61,6 +64,31 @@ impl JwsCompact {
         let fullchain = fullchain?;
 
         Ok(Some(fullchain))
+    }
+}
+
+impl JweEnc {
+    pub(crate) fn key_len(&self) -> usize {
+        match self {
+            JweEnc::A128GCM => a128gcm::JweA128GCMEncipher::key_len(),
+            JweEnc::A256GCM => a256gcm::JweA256GCMEncipher::key_len(),
+            JweEnc::A128CBC_HS256 => a128cbc_hs256::JweA128CBCHS256Decipher::key_len(),
+        }
+    }
+
+    pub(crate) fn decipher_inner(
+        &self,
+        key_buffer: &[u8],
+        jwec: &JweCompact,
+    ) -> Result<Vec<u8>, JwtError> {
+        match self {
+            JweEnc::A128GCM => a128gcm::JweA128GCMEncipher::try_from(key_buffer)
+                .and_then(|jwe_decipher| jwe_decipher.decipher_inner(jwec)),
+            JweEnc::A256GCM => a256gcm::JweA256GCMEncipher::try_from(key_buffer)
+                .and_then(|jwe_decipher| jwe_decipher.decipher_inner(jwec)),
+            JweEnc::A128CBC_HS256 => a128cbc_hs256::JweA128CBCHS256Decipher::try_from(key_buffer)
+                .and_then(|jwe_decipher| jwe_decipher.decipher_inner(jwec)),
+        }
     }
 }
 

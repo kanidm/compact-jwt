@@ -1,7 +1,9 @@
 //! Traits that define behaviour of JWS signing and verification types.
 
+use crate::compact::{JweCompact, JweProtectedHeader};
 use crate::compact::{JwsCompact, JwsCompactVerifyData, ProtectedHeader};
 use crate::error::JwtError;
+use crate::jwe::Jwe;
 use crate::jws::{Jws, JwsCompactSign2Data};
 
 /// A trait defining how a JwsSigner will operate.
@@ -87,4 +89,22 @@ pub trait JwsSignable {
 
     /// After the signature is complete, allow post-processing of the compact jws
     fn post_process(&self, value: JwsCompact) -> Result<Self::Signed, JwtError>;
+}
+
+pub(crate) trait JweEncipherOuter {
+    fn set_header_alg(&self, hdr: &mut JweProtectedHeader);
+
+    fn wrap_key(&self, key_to_wrap: &[u8]) -> Result<Vec<u8>, JwtError>;
+}
+
+pub trait JweEncipherInner {
+    fn new_ephemeral() -> Result<Self, JwtError>
+    where
+        Self: Sized;
+
+    fn encipher_inner<O: JweEncipherOuter>(
+        &self,
+        outer: &O,
+        jwe: &Jwe,
+    ) -> Result<JweCompact, JwtError>;
 }

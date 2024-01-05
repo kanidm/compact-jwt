@@ -37,8 +37,8 @@ impl TryFrom<&[u8]> for JweA128CBCHS256Decipher {
 }
 
 impl JweA128CBCHS256Decipher {
-    pub fn key_buffer() -> Vec<u8> {
-        vec![0; 32]
+    pub fn key_len() -> usize {
+        32
     }
 
     pub fn decipher_inner(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
@@ -64,8 +64,6 @@ impl JweA128CBCHS256Decipher {
         hmac_data.extend_from_slice(&jwec.ciphertext);
         hmac_data.extend_from_slice(&additional_auth_data_length);
 
-        trace!(?hmac_data);
-
         // Create the hmac.
         let mut hmac_sig = hmac_signer
             .sign_oneshot_to_vec(hmac_data.as_slice())
@@ -90,22 +88,20 @@ impl JweA128CBCHS256Decipher {
         // Header and other bits have been authed now. Decrypt the payload.
         // Seems weird that the keys aren't maced?
 
-        trace!(?jwec.ciphertext);
-        trace!(?jwec.iv);
-
         let cipher = Cipher::aes_128_cbc();
 
         let block_size = cipher.block_size();
         // The ciphertext needs pkcs7 padding, so we have to deal with that later.
         let plaintext_len = jwec.ciphertext.len() + block_size;
         let mut plaintext = vec![0; plaintext_len];
-        trace!(?plaintext_len);
 
         let mut decrypter = Crypter::new(cipher, Mode::Decrypt, &self.aes_cbc_key, Some(&jwec.iv))
             .map_err(|ossl_err| {
                 debug!(?ossl_err);
                 JwtError::OpenSSLError
             })?;
+
+        decrypter.pad(true);
 
         let mut count = 0;
 
@@ -115,14 +111,11 @@ impl JweA128CBCHS256Decipher {
 
         // Only works because of CBC mode - cipher text will be block_size * N, and
         // plaintext_len will be block_size * (N + 1).
+        //
+        // Unclear if padding is needed?
         while idx < jwec.ciphertext.len() {
             let cipher_chunk = &jwec.ciphertext[idx..cipher_boundary];
             let mut_plaintext_chunk = &mut plaintext[count..plaintext_boundary];
-
-            trace!(?idx, ?cipher_boundary, ?count, ?plaintext_boundary);
-
-            trace!(?cipher_chunk);
-            trace!(?mut_plaintext_chunk, "before");
 
             count += decrypter
                 .update(cipher_chunk, mut_plaintext_chunk)
@@ -131,16 +124,10 @@ impl JweA128CBCHS256Decipher {
                     JwtError::OpenSSLError
                 })?;
 
-            trace!(?mut_plaintext_chunk, "after");
-
             idx += block_size;
             cipher_boundary = idx + block_size;
             plaintext_boundary = count + (block_size * 2);
         }
-
-        trace!(?plaintext, "pre final");
-
-        trace!(?idx, ?cipher_boundary, ?count, ?plaintext_boundary);
 
         let mut_plaintext_chunk = &mut plaintext[count..plaintext_boundary];
 
@@ -152,16 +139,6 @@ impl JweA128CBCHS256Decipher {
             })?;
 
         plaintext.truncate(count);
-
-        trace!(?plaintext, "final");
-
-        assert_eq!(
-            plaintext.as_slice(),
-            &[
-                76, 105, 118, 101, 32, 108, 111, 110, 103, 32, 97, 110, 100, 32, 112, 114, 111,
-                115, 112, 101, 114, 46
-            ]
-        );
 
         Ok(plaintext)
     }

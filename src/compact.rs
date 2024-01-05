@@ -297,15 +297,24 @@ pub enum JweAlg {
     /// AES 128 Key Wrap
     #[default]
     A128KW,
-    // https://www.rfc-editor.org/rfc/rfc7518#section-4.1
+    /// AES 256 Key Wrap
+    A256KW,
+    /// RSA-OAEP
+    #[serde(rename = "RSA-OAEP")]
+    RSA_OAEP,
 }
 
 #[derive(Debug, Serialize, Copy, Clone, Deserialize, PartialEq, Default)]
 #[allow(non_camel_case_types)]
 /// Encipherment algorithm
 pub enum JweEnc {
+    /// AES 128 GCM. Header is authenticated but not encrypted, the payload is
+    /// encrypted and authenticated.
     #[default]
     A128GCM,
+    /// AES 256 GCM. Header is authenticated but not encrypted, the payload is
+    /// encrypted and authenticated.
+    A256GCM,
     /// AES 128 CBC with HMAC 256
     /// WARNING: Decrypted values may not be correct as the CEK is not HMACed.
     #[serde(rename = "A128CBC-HS256")]
@@ -314,7 +323,7 @@ pub enum JweEnc {
 
 /// A header that will be signed and embedded in the Jws
 #[derive(Debug, Serialize, Clone, Deserialize, Default, PartialEq)]
-pub struct UnprotectedHeader {
+pub struct JweProtectedHeader {
     pub(crate) alg: JweAlg,
 
     pub(crate) enc: JweEnc,
@@ -351,7 +360,7 @@ pub struct UnprotectedHeader {
 
 #[derive(Clone)]
 pub struct JweCompact {
-    pub(crate) header: UnprotectedHeader,
+    pub(crate) header: JweProtectedHeader,
     pub(crate) hdr_b64: String,
     pub(crate) content_enc_key: Vec<u8>,
     pub(crate) iv: Vec<u8>,
@@ -391,7 +400,7 @@ impl FromStr for JweCompact {
             JwtError::InvalidCompactFormat
         })?;
 
-        let header: UnprotectedHeader = general_purpose::URL_SAFE_NO_PAD
+        let header: JweProtectedHeader = general_purpose::URL_SAFE_NO_PAD
             .decode(hdr_str)
             .map_err(|_| {
                 debug!("invalid base64 while decoding header");

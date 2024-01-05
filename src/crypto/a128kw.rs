@@ -1,11 +1,14 @@
-use crate::compact::{JweCompact, JweEnc};
+use crate::compact::{JweAlg, JweCompact, JweEnc, JweProtectedHeader};
+use crate::jwe::Jwe;
+use crate::traits::*;
 use crate::JwtError;
 
 use super::a128cbc_hs256::JweA128CBCHS256Decipher;
 
-use openssl::aes::{unwrap_key, AesKey};
+use openssl::aes::{unwrap_key, wrap_key, AesKey};
 use openssl::hash::MessageDigest;
 use openssl::pkey::PKey;
+use openssl::rand::rand_bytes;
 use openssl::sign::Signer;
 use openssl::symm::{Cipher, Crypter, Mode};
 
@@ -16,40 +19,83 @@ pub struct JweA128KWEncipher {
     wrap_key: [u8; 16],
 }
 
+impl JweEncipherOuter for JweA128KWEncipher {
+    fn set_header_alg(&self, hdr: &mut JweProtectedHeader) {
+        hdr.alg = JweAlg::A128KW;
+    }
+
+    fn wrap_key(&self, key_to_wrap: &[u8]) -> Result<Vec<u8>, JwtError> {
+        if key_to_wrap.len() > self.wrap_key.len() {
+            debug!(
+                "Unable to wrap key - key to wrap is longer than the wrapping key {} > {}",
+                key_to_wrap.len(),
+                self.wrap_key.len()
+            );
+            JwtError::InvalidKey;
+        }
+
+        let wrapping_key = AesKey::new_encrypt(&self.wrap_key).map_err(|ossl_err| {
+            debug!(?ossl_err);
+            JwtError::OpenSSLError
+        })?;
+
+        // Algorithm requires scratch space.
+        let mut wrapped_key = vec![0; key_to_wrap.len() + 8];
+
+        let len =
+            wrap_key(&wrapping_key, None, &mut wrapped_key, &key_to_wrap).map_err(|ossl_err| {
+                debug!(?ossl_err);
+                JwtError::OpenSSLError
+            })?;
+
+        Ok(wrapped_key)
+    }
+}
+
 impl JweA128KWEncipher {
-    pub fn decipher(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
-        // From what I can see the cek uses the same IV as the ciphertext?
+    pub fn generate_ephemeral() -> Result<Self, JwtError> {
+        let mut wrap_key = [0; 16];
+
+        rand_bytes(&mut wrap_key).map_err(|ossl_err| {
+            debug!(?ossl_err);
+            JwtError::OpenSSLError
+        })?;
+
+        Ok(JweA128KWEncipher { wrap_key })
+    }
+
+    pub fn encipher<E: JweEncipherInner>(&self, jwe: &Jwe) -> Result<JweCompact, JwtError> {
+        let encipher = E::new_ephemeral()?;
+        encipher.encipher_inner(self, jwe)
+    }
+
+    pub fn decipher(&self, jwec: &JweCompact) -> Result<Jwe, JwtError> {
         let wrap_key = AesKey::new_decrypt(&self.wrap_key).map_err(|ossl_err| {
             debug!(?ossl_err);
             JwtError::OpenSSLError
         })?;
 
-        let mut expected_wrap_key_buffer = match jwec.header.enc {
-            JweEnc::A128GCM => todo!(),
-            JweEnc::A128CBC_HS256 => JweA128CBCHS256Decipher::key_buffer(),
-        };
+        let expected_cek_key_len = jwec.header.enc.key_len();
+        let mut unwrapped_key = vec![0; expected_cek_key_len];
 
-        let len = unwrap_key(
-            &wrap_key,
-            None,
-            &mut expected_wrap_key_buffer,
-            &jwec.content_enc_key,
-        )
-        .map_err(|ossl_err| {
-            debug!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
+        let len = unwrap_key(&wrap_key, None, &mut unwrapped_key, &jwec.content_enc_key).map_err(
+            |ossl_err| {
+                debug!(?ossl_err);
+                JwtError::OpenSSLError
+            },
+        )?;
 
-        debug!(?len, ?expected_wrap_key_buffer);
+        unwrapped_key.truncate(expected_cek_key_len);
 
-        let jwe_decipher = match jwec.header.enc {
-            JweEnc::A128GCM => todo!(),
-            JweEnc::A128CBC_HS256 => {
-                JweA128CBCHS256Decipher::try_from(expected_wrap_key_buffer.as_slice())?
-            }
-        };
+        let payload = jwec
+            .header
+            .enc
+            .decipher_inner(unwrapped_key.as_slice(), jwec)?;
 
-        jwe_decipher.decipher_inner(jwec)
+        Ok(Jwe {
+            header: jwec.header.clone(),
+            payload,
+        })
     }
 }
 
@@ -82,7 +128,6 @@ mod tests {
     #[test]
     fn rfc7516_a128kw_validation_example() {
         // Taken from https://www.rfc-editor.org/rfc/rfc7516.html#appendix-A.3
-
         let _ = tracing_subscriber::fmt::try_init();
 
         let test_jwe = "eyJhbGciOiJBMTI4S1ciLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0.6KB707dM9YTIgHtLvtgWQ8mKwboJW3of9locizkDTHzBC2IlrT1oOQ.AxY8DCtDaGlsbGljb3RoZQ.KDlTtXchhZTGufMYmOYGS4HffxPSUrfmqCHXaI9wOGY.U0m_YmjN04DJvceFICbCVQ";
@@ -130,7 +175,7 @@ mod tests {
             .expect("Unable to decipher jwe");
 
         assert_eq!(
-            released.as_slice(),
+            released.payload(),
             &[
                 76, 105, 118, 101, 32, 108, 111, 110, 103, 32, 97, 110, 100, 32, 112, 114, 111,
                 115, 112, 101, 114, 46
