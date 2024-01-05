@@ -40,6 +40,8 @@ pub enum JwtError {
     X5cChainMissingLeaf,
     /// The provided x5c chain is not trusted
     X5cChainNotTrusted,
+    /// The provided key was not valid
+    InvalidKey,
 }
 
 impl fmt::Display for JwtError {

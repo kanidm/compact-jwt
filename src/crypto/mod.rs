@@ -4,12 +4,17 @@ use crate::error::JwtError;
 use base64::{engine::general_purpose, Engine as _};
 use openssl::x509::X509;
 
-use crate::compact::JwsCompact;
+use crate::compact::{JweCompact, JwsCompact};
 
 mod es256;
 mod hs256;
 mod rs256;
 mod x509;
+
+// mod rsaes_oaep;
+
+mod a128cbc_hs256;
+mod a128kw;
 
 #[cfg(feature = "hsm-crypto")]
 mod tpm;
@@ -56,5 +61,21 @@ impl JwsCompact {
         let fullchain = fullchain?;
 
         Ok(Some(fullchain))
+    }
+}
+
+impl JweCompact {
+    #[cfg(test)]
+    fn check_vectors(
+        &self,
+        chk_cek: &[u8],
+        chk_iv: &[u8],
+        chk_cipher: &[u8],
+        chk_aad: &[u8],
+    ) -> bool {
+        chk_cek == &self.content_enc_key
+            && chk_iv == &self.iv
+            && chk_cipher == &self.ciphertext
+            && chk_aad == &self.authentication_tag
     }
 }

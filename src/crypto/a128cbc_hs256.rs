@@ -1,0 +1,168 @@
+use crate::compact::JweCompact;
+use crate::JwtError;
+
+use openssl::aes::{unwrap_key, AesKey};
+use openssl::hash::MessageDigest;
+use openssl::pkey::PKey;
+use openssl::sign::Signer;
+use openssl::symm::{Cipher, Crypter, Mode};
+
+#[derive(Clone)]
+pub struct JweA128CBCHS256Decipher {
+    hmac_key: [u8; 16],
+    aes_cbc_key: [u8; 16],
+}
+
+impl TryFrom<&[u8]> for JweA128CBCHS256Decipher {
+    type Error = JwtError;
+
+    fn try_from(aes_cbc_hmac_key: &[u8]) -> Result<Self, Self::Error> {
+        if aes_cbc_hmac_key.len() != 32 {
+            return Err(JwtError::InvalidKey);
+        }
+
+        // https://www.rfc-editor.org/rfc/rfc7516.html#appendix-B
+        let (r_hmac_key, r_aes_cbc_key) = aes_cbc_hmac_key.split_at(16);
+
+        let mut hmac_key = [0; 16];
+        hmac_key.copy_from_slice(r_hmac_key);
+        let mut aes_cbc_key = [0; 16];
+        aes_cbc_key.copy_from_slice(r_aes_cbc_key);
+
+        Ok(JweA128CBCHS256Decipher {
+            hmac_key,
+            aes_cbc_key,
+        })
+    }
+}
+
+impl JweA128CBCHS256Decipher {
+    pub fn key_buffer() -> Vec<u8> {
+        vec![0; 32]
+    }
+
+    pub fn decipher_inner(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
+        // hmac
+        let hmac_key = PKey::hmac(&self.hmac_key).map_err(|ossl_err| {
+            debug!(?ossl_err);
+            JwtError::OpenSSLError
+        })?;
+
+        let mut hmac_signer =
+            Signer::new(MessageDigest::sha256(), &hmac_key).map_err(|ossl_err| {
+                debug!(?ossl_err);
+                JwtError::OpenSSLError
+            })?;
+
+        let additional_auth_data = jwec.hdr_b64.as_bytes();
+
+        // This is the number of *bits*
+        let additional_auth_data_length = ((additional_auth_data.len() * 8) as u64).to_be_bytes();
+
+        let mut hmac_data = additional_auth_data.to_vec();
+        hmac_data.extend_from_slice(&jwec.iv);
+        hmac_data.extend_from_slice(&jwec.ciphertext);
+        hmac_data.extend_from_slice(&additional_auth_data_length);
+
+        trace!(?hmac_data);
+
+        // Create the hmac.
+        let mut hmac_sig = hmac_signer
+            .sign_oneshot_to_vec(hmac_data.as_slice())
+            .map_err(|ossl_err| {
+                debug!(?ossl_err);
+                JwtError::OpenSSLError
+            })?;
+
+        // trunc the hmac to 16 bytes.
+        if hmac_sig.len() != 32 {
+            debug!("Invalid hmac signature was generated");
+            return Err(JwtError::OpenSSLError);
+        }
+
+        hmac_sig.truncate(16);
+
+        if hmac_sig != jwec.authentication_tag {
+            debug!("Invalid hmac over authenticated data");
+            return Err(JwtError::InvalidSignature);
+        }
+
+        // Header and other bits have been authed now. Decrypt the payload.
+        // Seems weird that the keys aren't maced?
+
+        trace!(?jwec.ciphertext);
+        trace!(?jwec.iv);
+
+        let cipher = Cipher::aes_128_cbc();
+
+        let block_size = cipher.block_size();
+        // The ciphertext needs pkcs7 padding, so we have to deal with that later.
+        let plaintext_len = jwec.ciphertext.len() + block_size;
+        let mut plaintext = vec![0; plaintext_len];
+        trace!(?plaintext_len);
+
+        let mut decrypter = Crypter::new(cipher, Mode::Decrypt, &self.aes_cbc_key, Some(&jwec.iv))
+            .map_err(|ossl_err| {
+                debug!(?ossl_err);
+                JwtError::OpenSSLError
+            })?;
+
+        let mut count = 0;
+
+        let mut idx = 0;
+        let mut cipher_boundary = idx + block_size;
+        let mut plaintext_boundary = count + (block_size * 2);
+
+        // Only works because of CBC mode - cipher text will be block_size * N, and
+        // plaintext_len will be block_size * (N + 1).
+        while idx < jwec.ciphertext.len() {
+            let cipher_chunk = &jwec.ciphertext[idx..cipher_boundary];
+            let mut_plaintext_chunk = &mut plaintext[count..plaintext_boundary];
+
+            trace!(?idx, ?cipher_boundary, ?count, ?plaintext_boundary);
+
+            trace!(?cipher_chunk);
+            trace!(?mut_plaintext_chunk, "before");
+
+            count += decrypter
+                .update(cipher_chunk, mut_plaintext_chunk)
+                .map_err(|ossl_err| {
+                    debug!(?ossl_err);
+                    JwtError::OpenSSLError
+                })?;
+
+            trace!(?mut_plaintext_chunk, "after");
+
+            idx += block_size;
+            cipher_boundary = idx + block_size;
+            plaintext_boundary = count + (block_size * 2);
+        }
+
+        trace!(?plaintext, "pre final");
+
+        trace!(?idx, ?cipher_boundary, ?count, ?plaintext_boundary);
+
+        let mut_plaintext_chunk = &mut plaintext[count..plaintext_boundary];
+
+        count += decrypter
+            .finalize(mut_plaintext_chunk)
+            .map_err(|ossl_err| {
+                debug!(?ossl_err);
+                JwtError::OpenSSLError
+            })?;
+
+        plaintext.truncate(count);
+
+        trace!(?plaintext, "final");
+
+        assert_eq!(
+            plaintext.as_slice(),
+            &[
+                76, 105, 118, 101, 32, 108, 111, 110, 103, 32, 97, 110, 100, 32, 112, 114, 111,
+                115, 112, 101, 114, 46
+            ]
+        );
+
+        Ok(plaintext)
+    }
+}

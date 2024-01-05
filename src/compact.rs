@@ -289,3 +289,209 @@ impl<'a> JwsCompactVerifyData<'a> {
             })
     }
 }
+
+#[derive(Debug, Serialize, Copy, Clone, Deserialize, PartialEq, Default)]
+#[allow(non_camel_case_types)]
+/// Cryptographic algorithm
+pub enum JweAlg {
+    /// AES 128 Key Wrap
+    #[default]
+    A128KW,
+    // https://www.rfc-editor.org/rfc/rfc7518#section-4.1
+}
+
+#[derive(Debug, Serialize, Copy, Clone, Deserialize, PartialEq, Default)]
+#[allow(non_camel_case_types)]
+/// Encipherment algorithm
+pub enum JweEnc {
+    #[default]
+    A128GCM,
+    /// AES 128 CBC with HMAC 256
+    /// WARNING: Decrypted values may not be correct as the CEK is not HMACed.
+    #[serde(rename = "A128CBC-HS256")]
+    A128CBC_HS256,
+}
+
+/// A header that will be signed and embedded in the Jws
+#[derive(Debug, Serialize, Clone, Deserialize, Default, PartialEq)]
+pub struct UnprotectedHeader {
+    pub(crate) alg: JweAlg,
+
+    pub(crate) enc: JweEnc,
+
+    // zip
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) jku: Option<Url>,
+    // https://datatracker.ietf.org/doc/html/rfc7517
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) jwk: Option<Jwk>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) kid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) crit: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) typ: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) cty: Option<String>,
+
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
+    pub(crate) x5u: Option<()>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) x5c: Option<Vec<String>>,
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
+    pub(crate) x5t: Option<()>,
+    #[serde(
+        skip_deserializing,
+        rename = "x5t#S256",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) x5t_s256: Option<()>,
+    // Don't allow extra header names?
+}
+
+#[derive(Clone)]
+pub struct JweCompact {
+    pub(crate) header: UnprotectedHeader,
+    pub(crate) hdr_b64: String,
+    pub(crate) content_enc_key: Vec<u8>,
+    pub(crate) iv: Vec<u8>,
+    pub(crate) ciphertext: Vec<u8>,
+    pub(crate) authentication_tag: Vec<u8>,
+}
+
+impl JweCompact {
+    /// Get the KID used to encipher this Jws if present
+    pub fn get_jwk_kid(&self) -> Option<&str> {
+        self.header.kid.as_deref()
+    }
+
+    /// Get the embedded Url for the Jwk that enciphered this Jwe.
+    ///
+    /// You MUST ensure this url uses HTTPS and you MUST ensure that your
+    /// client validates the CA's used.
+    pub fn get_jwk_pubkey_url(&self) -> Option<&Url> {
+        self.header.jku.as_ref()
+    }
+
+    /// Get the embedded public key used to encipher this Jwe, if present.
+    pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
+        self.header.jwk.as_ref()
+    }
+}
+
+impl FromStr for JweCompact {
+    type Err = JwtError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // split on the ".".
+        let mut siter = s.splitn(5, '.');
+
+        let hdr_str = siter.next().ok_or_else(|| {
+            debug!("invalid compact format - unprotected header not present");
+            JwtError::InvalidCompactFormat
+        })?;
+
+        let header: UnprotectedHeader = general_purpose::URL_SAFE_NO_PAD
+            .decode(hdr_str)
+            .map_err(|_| {
+                debug!("invalid base64 while decoding header");
+                JwtError::InvalidBase64
+            })
+            .and_then(|bytes| {
+                serde_json::from_slice(&bytes).map_err(|e| {
+                    debug!(?e, "invalid header format - invalid json");
+                    JwtError::InvalidHeaderFormat
+                })
+            })?;
+
+        let hdr_b64 = hdr_str.to_string();
+
+        // Assert that from the critical field of the header, we have decoded all the needed types.
+        // Remember, anything in rfc7515 can NOT be in the crit field.
+        if let Some(crit) = &header.crit {
+            if !crit.is_empty() {
+                error!("critical extension - unable to process critical extensions");
+                return Err(JwtError::CriticalExtension);
+            }
+        }
+
+        // Now we have a header, lets get the rest.
+        let content_enc_key_str = siter.next().ok_or_else(|| {
+            debug!("invalid compact format - content encryption key not present");
+            JwtError::InvalidCompactFormat
+        })?;
+
+        let iv_str = siter.next().ok_or_else(|| {
+            debug!("invalid compact format - iv not present");
+            JwtError::InvalidCompactFormat
+        })?;
+
+        let ciphertext_str = siter.next().ok_or_else(|| {
+            debug!("invalid compact format - ciphertext not present");
+            JwtError::InvalidCompactFormat
+        })?;
+
+        let authentication_tag_str = siter.next().ok_or_else(|| {
+            debug!("invalid compact format - ciphertext not present");
+            JwtError::InvalidCompactFormat
+        })?;
+
+        if siter.next().is_some() {
+            // Too much data.
+            debug!("invalid compact format - extra fields present");
+            return Err(JwtError::InvalidCompactFormat);
+        }
+
+        let content_enc_key = general_purpose::URL_SAFE_NO_PAD
+            .decode(content_enc_key_str)
+            .map_err(|_| {
+                debug!("invalid base64 when decoding content encryption key");
+                JwtError::InvalidBase64
+            })?;
+
+        let iv = general_purpose::URL_SAFE_NO_PAD
+            .decode(iv_str)
+            .map_err(|_| {
+                debug!("invalid base64 when decoding iv");
+                JwtError::InvalidBase64
+            })?;
+
+        let ciphertext = general_purpose::URL_SAFE_NO_PAD
+            .decode(ciphertext_str)
+            .map_err(|_| {
+                debug!("invalid base64 when decoding ciphertext");
+                JwtError::InvalidBase64
+            })?;
+
+        let authentication_tag = general_purpose::URL_SAFE_NO_PAD
+            .decode(authentication_tag_str)
+            .map_err(|_| {
+                debug!("invalid base64 when decoding authentication tag");
+                JwtError::InvalidBase64
+            })?;
+
+        Ok(JweCompact {
+            header,
+            hdr_b64,
+            content_enc_key,
+            iv,
+            ciphertext,
+            authentication_tag,
+        })
+    }
+}
+
+impl fmt::Display for JweCompact {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let content_enc_key_b64 = general_purpose::URL_SAFE_NO_PAD.encode(&self.content_enc_key);
+        let iv_b64 = general_purpose::URL_SAFE_NO_PAD.encode(&self.iv);
+        let cipher_b64 = general_purpose::URL_SAFE_NO_PAD.encode(&self.ciphertext);
+        let aad_b64 = general_purpose::URL_SAFE_NO_PAD.encode(&self.authentication_tag);
+
+        write!(
+            f,
+            "{}.{}.{}.{}.{}",
+            self.hdr_b64, content_enc_key_b64, iv_b64, cipher_b64, aad_b64
+        )
+    }
+}
