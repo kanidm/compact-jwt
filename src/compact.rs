@@ -299,6 +299,9 @@ pub enum JweAlg {
     A128KW,
     /// AES 256 Key Wrap
     A256KW,
+    /// ECDH-ES
+    #[serde(rename = "ECDH-ES+A128KW")]
+    ECDH_ES_A128KW,
     /// RSA-OAEP
     #[serde(rename = "RSA-OAEP")]
     RSA_OAEP,
@@ -327,6 +330,10 @@ pub struct JweProtectedHeader {
     pub(crate) alg: JweAlg,
 
     pub(crate) enc: JweEnc,
+
+    // https://www.rfc-editor.org/rfc/rfc7518#section-4.6.1.1
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) epk: Option<Jwk>,
 
     // zip
     #[serde(skip_serializing_if = "Option::is_none")]

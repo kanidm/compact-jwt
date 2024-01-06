@@ -1,16 +1,10 @@
-use crate::compact::{JweAlg, JweCompact, JweEnc, JweProtectedHeader};
+use crate::compact::{JweAlg, JweCompact, JweProtectedHeader};
 use crate::jwe::Jwe;
 use crate::traits::*;
 use crate::JwtError;
 
-use super::a128cbc_hs256::JweA128CBCHS256Decipher;
-
 use openssl::aes::{unwrap_key, wrap_key, AesKey};
-use openssl::hash::MessageDigest;
-use openssl::pkey::PKey;
 use openssl::rand::rand_bytes;
-use openssl::sign::Signer;
-use openssl::symm::{Cipher, Crypter, Mode};
 
 // Do I need some inner type to handle the enc bit?
 
@@ -20,8 +14,9 @@ pub struct JweA128KWEncipher {
 }
 
 impl JweEncipherOuter for JweA128KWEncipher {
-    fn set_header_alg(&self, hdr: &mut JweProtectedHeader) {
+    fn set_header_alg(&self, hdr: &mut JweProtectedHeader) -> Result<(), JwtError> {
         hdr.alg = JweAlg::A128KW;
+        Ok(())
     }
 
     fn wrap_key(&self, key_to_wrap: &[u8]) -> Result<Vec<u8>, JwtError> {
@@ -99,6 +94,12 @@ impl JweA128KWEncipher {
     }
 }
 
+impl From<[u8; 16]> for JweA128KWEncipher {
+    fn from(wrap_key: [u8; 16]) -> JweA128KWEncipher {
+        JweA128KWEncipher { wrap_key }
+    }
+}
+
 impl TryFrom<Vec<u8>> for JweA128KWEncipher {
     type Error = JwtError;
 
@@ -120,7 +121,6 @@ impl TryFrom<Vec<u8>> for JweA128KWEncipher {
 mod tests {
     use super::JweA128KWEncipher;
     use crate::compact::JweCompact;
-    use crate::traits::*;
     use base64::{engine::general_purpose, Engine as _};
     use std::convert::TryFrom;
     use std::str::FromStr;

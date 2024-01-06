@@ -1,9 +1,6 @@
-use crate::compact::{JweCompact, JweEnc};
+use crate::compact::JweCompact;
 use crate::jwe::Jwe;
 use crate::JwtError;
-
-use super::a128cbc_hs256::JweA128CBCHS256Decipher;
-use super::a256gcm::JweA256GCMEncipher;
 
 use openssl::encrypt::Decrypter;
 use openssl::hash::MessageDigest;
@@ -94,7 +91,6 @@ impl JweRSAOAEPDecipher {
 mod tests {
     use super::JweRSAOAEPDecipher;
     use crate::compact::JweCompact;
-    use crate::traits::*;
     use base64::{engine::general_purpose, Engine as _};
     use std::convert::TryFrom;
     use std::str::FromStr;

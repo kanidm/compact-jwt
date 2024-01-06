@@ -1,12 +1,8 @@
-use crate::compact::{JweCompact, JweEnc, JweProtectedHeader};
+use crate::compact::{JweCompact, JweEnc};
 use crate::jwe::Jwe;
 use crate::traits::*;
 use crate::JwtError;
 
-use openssl::aes::{unwrap_key, AesKey};
-use openssl::hash::MessageDigest;
-use openssl::pkey::PKey;
-use openssl::sign::Signer;
 use openssl::symm::{Cipher, Crypter, Mode};
 
 use base64::{engine::general_purpose, Engine as _};
@@ -50,6 +46,8 @@ impl JweEncipherInner for JweA128GCMEncipher {
     ) -> Result<JweCompact, JwtError> {
         let mut header = jwe.header.clone();
         header.enc = JweEnc::A128GCM;
+
+        outer.set_header_alg(&mut header);
 
         // Clone the header and update it with our details.
         let hdr_b64 = serde_json::to_vec(&header)
@@ -210,16 +208,8 @@ pub(crate) fn aes_gcm_decipher(
 #[cfg(test)]
 mod tests {
     use super::JweA128GCMEncipher;
-    use crate::compact::JweCompact;
     use crate::crypto::a128kw::JweA128KWEncipher;
-    use crate::traits::*;
-
-    use crate::compact::JweEnc;
     use crate::jwe::JweBuilder;
-
-    // use base64::{engine::general_purpose, Engine as _};
-    // use std::convert::TryFrom;
-    // use std::str::FromStr;
 
     #[test]
     fn a128kw_outer_a128gcm_inner() {

@@ -92,7 +92,7 @@ pub trait JwsSignable {
 }
 
 pub(crate) trait JweEncipherOuter {
-    fn set_header_alg(&self, hdr: &mut JweProtectedHeader);
+    fn set_header_alg(&self, hdr: &mut JweProtectedHeader) -> Result<(), JwtError>;
 
     fn wrap_key(&self, key_to_wrap: &[u8]) -> Result<Vec<u8>, JwtError>;
 }

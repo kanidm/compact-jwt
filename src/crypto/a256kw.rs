@@ -1,16 +1,10 @@
-use crate::compact::{JweAlg, JweCompact, JweEnc, JweProtectedHeader};
+use crate::compact::{JweAlg, JweCompact, JweProtectedHeader};
 use crate::jwe::Jwe;
 use crate::traits::*;
 use crate::JwtError;
 
 use openssl::aes::{unwrap_key, wrap_key, AesKey};
-use openssl::hash::MessageDigest;
-use openssl::pkey::PKey;
 use openssl::rand::rand_bytes;
-use openssl::sign::Signer;
-use openssl::symm::{Cipher, Crypter, Mode};
-
-// Do I need some inner type to handle the enc bit?
 
 #[derive(Clone)]
 pub struct JweA256KWEncipher {
@@ -18,8 +12,9 @@ pub struct JweA256KWEncipher {
 }
 
 impl JweEncipherOuter for JweA256KWEncipher {
-    fn set_header_alg(&self, hdr: &mut JweProtectedHeader) {
+    fn set_header_alg(&self, hdr: &mut JweProtectedHeader) -> Result<(), JwtError> {
         hdr.alg = JweAlg::A256KW;
+        Ok(())
     }
 
     fn wrap_key(&self, key_to_wrap: &[u8]) -> Result<Vec<u8>, JwtError> {

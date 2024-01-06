@@ -19,6 +19,8 @@ mod a128kw;
 mod a256gcm;
 mod a256kw;
 
+mod ecdhes_a128kw;
+
 #[cfg(feature = "hsm-crypto")]
 mod tpm;
 

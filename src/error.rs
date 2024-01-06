@@ -42,6 +42,8 @@ pub enum JwtError {
     X5cChainNotTrusted,
     /// The provided key was not valid
     InvalidKey,
+    /// A required header value is not set
+    CriticalMissingHeaderValue,
 }
 
 impl fmt::Display for JwtError {

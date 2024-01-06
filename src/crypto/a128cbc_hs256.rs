@@ -1,7 +1,6 @@
 use crate::compact::JweCompact;
 use crate::JwtError;
 
-use openssl::aes::{unwrap_key, AesKey};
 use openssl::hash::MessageDigest;
 use openssl::pkey::PKey;
 use openssl::sign::Signer;
