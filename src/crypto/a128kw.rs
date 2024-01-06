@@ -8,9 +8,12 @@ use openssl::rand::rand_bytes;
 
 // Do I need some inner type to handle the enc bit?
 
+pub(crate) const KEY_LEN: usize = 16;
+const KW_EXTRA: usize = 8;
+
 #[derive(Clone)]
 pub struct JweA128KWEncipher {
-    wrap_key: [u8; 16],
+    wrap_key: [u8; KEY_LEN],
 }
 
 impl JweEncipherOuter for JweA128KWEncipher {
@@ -20,11 +23,11 @@ impl JweEncipherOuter for JweA128KWEncipher {
     }
 
     fn wrap_key(&self, key_to_wrap: &[u8]) -> Result<Vec<u8>, JwtError> {
-        if key_to_wrap.len() > self.wrap_key.len() {
+        if key_to_wrap.len() > KEY_LEN {
             debug!(
                 "Unable to wrap key - key to wrap is longer than the wrapping key {} > {}",
                 key_to_wrap.len(),
-                self.wrap_key.len()
+                KEY_LEN
             );
             JwtError::InvalidKey;
         }
@@ -34,8 +37,8 @@ impl JweEncipherOuter for JweA128KWEncipher {
             JwtError::OpenSSLError
         })?;
 
-        // Algorithm requires scratch space.
-        let mut wrapped_key = vec![0; key_to_wrap.len() + 8];
+        // Algorithm requires extra space.
+        let mut wrapped_key = vec![0; key_to_wrap.len() + KW_EXTRA];
 
         let len =
             wrap_key(&wrapping_key, None, &mut wrapped_key, &key_to_wrap).map_err(|ossl_err| {
@@ -49,7 +52,7 @@ impl JweEncipherOuter for JweA128KWEncipher {
 
 impl JweA128KWEncipher {
     pub fn generate_ephemeral() -> Result<Self, JwtError> {
-        let mut wrap_key = [0; 16];
+        let mut wrap_key = [0; KEY_LEN];
 
         rand_bytes(&mut wrap_key).map_err(|ossl_err| {
             debug!(?ossl_err);
@@ -94,8 +97,8 @@ impl JweA128KWEncipher {
     }
 }
 
-impl From<[u8; 16]> for JweA128KWEncipher {
-    fn from(wrap_key: [u8; 16]) -> JweA128KWEncipher {
+impl From<[u8; KEY_LEN]> for JweA128KWEncipher {
+    fn from(wrap_key: [u8; KEY_LEN]) -> JweA128KWEncipher {
         JweA128KWEncipher { wrap_key }
     }
 }
@@ -104,12 +107,12 @@ impl TryFrom<Vec<u8>> for JweA128KWEncipher {
     type Error = JwtError;
 
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        if value.len() != 16 {
+        if value.len() != KEY_LEN {
             // Wrong key size.
             return Err(JwtError::InvalidKey);
         }
 
-        let mut wrap_key = [0; 16];
+        let mut wrap_key = [0; KEY_LEN];
 
         wrap_key.copy_from_slice(&value);
 

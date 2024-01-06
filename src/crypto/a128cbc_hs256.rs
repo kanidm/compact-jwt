@@ -6,26 +6,31 @@ use openssl::pkey::PKey;
 use openssl::sign::Signer;
 use openssl::symm::{Cipher, Crypter, Mode};
 
+const AES_KEY_LEN: usize = 16;
+const HMAC_KEY_LEN: usize = 16;
+const HMAC_SIG_LEN: usize = 32;
+const HMAC_TRUNC_SIG_LEN: usize = 16;
+
 #[derive(Clone)]
 pub struct JweA128CBCHS256Decipher {
-    hmac_key: [u8; 16],
-    aes_cbc_key: [u8; 16],
+    hmac_key: [u8; HMAC_KEY_LEN],
+    aes_cbc_key: [u8; AES_KEY_LEN],
 }
 
 impl TryFrom<&[u8]> for JweA128CBCHS256Decipher {
     type Error = JwtError;
 
     fn try_from(aes_cbc_hmac_key: &[u8]) -> Result<Self, Self::Error> {
-        if aes_cbc_hmac_key.len() != 32 {
+        if aes_cbc_hmac_key.len() != AES_KEY_LEN + HMAC_KEY_LEN {
             return Err(JwtError::InvalidKey);
         }
 
         // https://www.rfc-editor.org/rfc/rfc7516.html#appendix-B
-        let (r_hmac_key, r_aes_cbc_key) = aes_cbc_hmac_key.split_at(16);
+        let (r_hmac_key, r_aes_cbc_key) = aes_cbc_hmac_key.split_at(HMAC_KEY_LEN);
 
-        let mut hmac_key = [0; 16];
+        let mut hmac_key = [0; HMAC_KEY_LEN];
         hmac_key.copy_from_slice(r_hmac_key);
-        let mut aes_cbc_key = [0; 16];
+        let mut aes_cbc_key = [0; AES_KEY_LEN];
         aes_cbc_key.copy_from_slice(r_aes_cbc_key);
 
         Ok(JweA128CBCHS256Decipher {
@@ -37,7 +42,7 @@ impl TryFrom<&[u8]> for JweA128CBCHS256Decipher {
 
 impl JweA128CBCHS256Decipher {
     pub fn key_len() -> usize {
-        32
+        AES_KEY_LEN + HMAC_KEY_LEN
     }
 
     pub fn decipher_inner(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
@@ -55,7 +60,7 @@ impl JweA128CBCHS256Decipher {
 
         let additional_auth_data = jwec.hdr_b64.as_bytes();
 
-        // This is the number of *bits*
+        // This is the number of *bits* which is why we mul by 8 here.
         let additional_auth_data_length = ((additional_auth_data.len() * 8) as u64).to_be_bytes();
 
         let mut hmac_data = additional_auth_data.to_vec();
@@ -72,12 +77,12 @@ impl JweA128CBCHS256Decipher {
             })?;
 
         // trunc the hmac to 16 bytes.
-        if hmac_sig.len() != 32 {
+        if hmac_sig.len() != HMAC_SIG_LEN {
             debug!("Invalid hmac signature was generated");
             return Err(JwtError::OpenSSLError);
         }
 
-        hmac_sig.truncate(16);
+        hmac_sig.truncate(HMAC_TRUNC_SIG_LEN);
 
         if hmac_sig != jwec.authentication_tag {
             debug!("Invalid hmac over authenticated data");

@@ -8,16 +8,22 @@ use openssl::symm::Cipher;
 use base64::{engine::general_purpose, Engine as _};
 use openssl::rand::rand_bytes;
 
+pub(crate) const KEY_LEN: usize = 32;
+
+// 96 bit iv per Cipher::aes_256_gcm().iv_len()
+const IV_LEN: usize = 12;
+const AUTH_TAG_LEN: usize = 16;
+
 #[derive(Clone)]
 pub struct JweA256GCMEncipher {
-    aes_key: [u8; 32],
+    aes_key: [u8; KEY_LEN],
 }
 
 impl TryFrom<&[u8]> for JweA256GCMEncipher {
     type Error = JwtError;
 
     fn try_from(r_aes_key: &[u8]) -> Result<Self, Self::Error> {
-        if r_aes_key.len() != 32 {
+        if r_aes_key.len() != KEY_LEN {
             return Err(JwtError::InvalidKey);
         }
 
@@ -30,7 +36,7 @@ impl TryFrom<&[u8]> for JweA256GCMEncipher {
 
 impl JweEncipherInner for JweA256GCMEncipher {
     fn new_ephemeral() -> Result<Self, JwtError> {
-        let mut aes_key = [0; 32];
+        let mut aes_key = [0; KEY_LEN];
         rand_bytes(&mut aes_key).map_err(|ossl_err| {
             debug!(?ossl_err);
             JwtError::OpenSSLError
@@ -59,18 +65,15 @@ impl JweEncipherInner for JweA256GCMEncipher {
 
         let content_enc_key = outer.wrap_key(&self.aes_key)?;
 
-        // 128 bit iv.
-        let mut iv = vec![0; 16];
+        let mut iv = vec![0; IV_LEN];
         rand_bytes(&mut iv).map_err(|ossl_err| {
             debug!(?ossl_err);
             JwtError::OpenSSLError
         })?;
 
-        let authentication_tag_bytes = 16;
-
         let (ciphertext, authentication_tag) = super::a128gcm::aes_gcm_encipher(
             Cipher::aes_256_gcm(),
-            authentication_tag_bytes,
+            AUTH_TAG_LEN,
             &jwe.payload,
             hdr_b64.as_bytes(),
             &self.aes_key,
@@ -90,7 +93,7 @@ impl JweEncipherInner for JweA256GCMEncipher {
 
 impl JweA256GCMEncipher {
     pub fn key_len() -> usize {
-        32
+        KEY_LEN
     }
 
     pub fn decipher_inner(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {

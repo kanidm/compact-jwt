@@ -3,7 +3,7 @@ use crate::jwe::Jwe;
 use crate::traits::*;
 use crate::JwtError;
 
-use super::a128kw::JweA128KWEncipher;
+use super::a128kw::{self, JweA128KWEncipher};
 
 use base64urlsafedata::Base64UrlSafeData;
 
@@ -12,6 +12,8 @@ use openssl::ec::{EcGroup, EcKey};
 use openssl::nid::Nid;
 use openssl::pkey::{PKey, PKeyRef, Private, Public};
 use openssl::pkey_ctx::PkeyCtx;
+
+const COORD_SIZE: usize = 32;
 
 pub struct JweEcdhEsA128KWEncipher {
     priv_key: PKey<Private>,
@@ -52,19 +54,16 @@ impl JweEncipherOuter for JweEcdhEsA128KWEncipher {
                 JwtError::OpenSSLError
             })?;
 
-        let mut public_key_x = Vec::with_capacity(32);
-        let mut public_key_y = Vec::with_capacity(32);
-
-        public_key_x.resize(32, 0);
-        public_key_y.resize(32, 0);
+        let mut public_key_x = vec![0; COORD_SIZE];
+        let mut public_key_y = vec![0; COORD_SIZE];
 
         let xbnv = xbn.to_vec();
         let ybnv = ybn.to_vec();
 
-        let (_pad, x_fill) = public_key_x.split_at_mut(32 - xbnv.len());
+        let (_pad, x_fill) = public_key_x.split_at_mut(COORD_SIZE - xbnv.len());
         x_fill.copy_from_slice(&xbnv);
 
-        let (_pad, y_fill) = public_key_y.split_at_mut(32 - ybnv.len());
+        let (_pad, y_fill) = public_key_y.split_at_mut(COORD_SIZE - ybnv.len());
         y_fill.copy_from_slice(&ybnv);
 
         hdr.epk = Some(Jwk::EC {
@@ -80,11 +79,11 @@ impl JweEncipherOuter for JweEcdhEsA128KWEncipher {
     }
 
     fn wrap_key(&self, key_to_wrap: &[u8]) -> Result<Vec<u8>, JwtError> {
-        if key_to_wrap.len() > 16 {
+        if key_to_wrap.len() > a128kw::KEY_LEN {
             debug!(
                 "Unable to wrap key - key to wrap is longer than the wrapping key {} > {}",
                 key_to_wrap.len(),
-                16
+                a128kw::KEY_LEN
             );
             JwtError::InvalidKey;
         }
@@ -226,7 +225,7 @@ impl JweEcdhEsA128KWDecipher {
 fn derive_key(
     priv_key: &PKeyRef<Private>,
     pub_key: &PKeyRef<Public>,
-) -> Result<[u8; 16], JwtError> {
+) -> Result<[u8; a128kw::KEY_LEN], JwtError> {
     // derive the wrap key.
     let mut priv_key_ctx = PkeyCtx::new(priv_key).map_err(|ossl_err| {
         debug!(?ossl_err);
@@ -243,7 +242,7 @@ fn derive_key(
         JwtError::OpenSSLError
     })?;
 
-    let mut wrapping_key = [0; 16];
+    let mut wrapping_key = [0; a128kw::KEY_LEN];
 
     priv_key_ctx
         .derive(Some(&mut wrapping_key))
