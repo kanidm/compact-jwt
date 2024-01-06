@@ -33,6 +33,8 @@ impl TryFrom<&[u8]> for JweA128GCMEncipher {
     }
 }
 
+impl JweEncipherInnerK128 for JweA128GCMEncipher {}
+
 impl JweEncipherInner for JweA128GCMEncipher {
     fn new_ephemeral() -> Result<Self, JwtError> {
         let mut aes_key = [0; KEY_LEN];

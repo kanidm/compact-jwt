@@ -68,7 +68,10 @@ impl JweA128KWEncipher {
     }
 
     /// Given a JWE, encipher it's content to a compact form.
-    pub fn encipher<E: JweEncipherInner>(&self, jwe: &Jwe) -> Result<JweCompact, JwtError> {
+    pub fn encipher<E: JweEncipherInner + JweEncipherInnerK128>(
+        &self,
+        jwe: &Jwe,
+    ) -> Result<JweCompact, JwtError> {
         let encipher = E::new_ephemeral()?;
         encipher.encipher_inner(self, jwe)
     }

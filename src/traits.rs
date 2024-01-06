@@ -100,6 +100,12 @@ pub trait JweEncipherOuter {
     fn wrap_key(&self, key_to_wrap: &[u8]) -> Result<Vec<u8>, JwtError>;
 }
 
+/// A marker trait indicating that this type uses 128 bit keys.
+pub trait JweEncipherInnerK128 {}
+
+/// A marker trait indicating that this type uses 256 bit keys.
+pub trait JweEncipherInnerK256 {}
+
 /// A trait defining types that provide inner content encryption
 pub trait JweEncipherInner {
     /// Generate a new ephemeral key for this inner encipher. Keys are always

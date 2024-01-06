@@ -34,6 +34,8 @@ impl TryFrom<&[u8]> for JweA256GCMEncipher {
     }
 }
 
+impl JweEncipherInnerK256 for JweA256GCMEncipher {}
+
 impl JweEncipherInner for JweA256GCMEncipher {
     fn new_ephemeral() -> Result<Self, JwtError> {
         let mut aes_key = [0; KEY_LEN];
