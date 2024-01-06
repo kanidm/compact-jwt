@@ -119,7 +119,7 @@ pub(crate) fn aes_gcm_encipher(
     let mut ciphertext = vec![0; plaintext.len() + block_size];
 
     let mut encrypter =
-        Crypter::new(cipher, Mode::Encrypt, aes_key, Some(&iv)).map_err(|ossl_err| {
+        Crypter::new(cipher, Mode::Encrypt, aes_key, Some(iv)).map_err(|ossl_err| {
             error!(?ossl_err);
             JwtError::OpenSSLError
         })?;

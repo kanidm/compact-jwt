@@ -75,7 +75,7 @@ impl JwsCompact {
 }
 
 impl JweEnc {
-    pub(crate) fn key_len(&self) -> usize {
+    pub(crate) fn key_len(self) -> usize {
         match self {
             JweEnc::A128GCM => a128gcm::JweA128GCMEncipher::key_len(),
             JweEnc::A256GCM => a256gcm::JweA256GCMEncipher::key_len(),
@@ -84,7 +84,7 @@ impl JweEnc {
     }
 
     pub(crate) fn decipher_inner(
-        &self,
+        self,
         key_buffer: &[u8],
         jwec: &JweCompact,
     ) -> Result<Vec<u8>, JwtError> {

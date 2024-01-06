@@ -160,7 +160,7 @@ impl JweEcdhEsA128KWDecipher {
                 let public = ec_key.public_key();
                 let ecgroup = ec_key.group();
 
-                EcKey::from_public_key(&ecgroup, &public)
+                EcKey::from_public_key(ecgroup, public)
             })
             .and_then(|ec_public: EcKey<Public>| PKey::from_ec_key(ec_public))
             .map_err(|ossl_err| {

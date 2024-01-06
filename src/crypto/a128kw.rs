@@ -45,7 +45,7 @@ impl JweEncipherOuter for JweA128KWEncipher {
         // Algorithm requires extra space.
         let mut wrapped_key = vec![0; key_to_wrap.len() + KW_EXTRA];
 
-        wrap_key(&wrapping_key, None, &mut wrapped_key, &key_to_wrap).map_err(|ossl_err| {
+        wrap_key(&wrapping_key, None, &mut wrapped_key, key_to_wrap).map_err(|ossl_err| {
             debug!(?ossl_err);
             JwtError::OpenSSLError
         })?;
