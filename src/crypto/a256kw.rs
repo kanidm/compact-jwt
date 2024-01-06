@@ -9,6 +9,7 @@ use openssl::rand::rand_bytes;
 pub(crate) const KEY_LEN: usize = 32;
 const KW_EXTRA: usize = 8;
 
+/// A JWE outer encipher and decipher for RFC3394 AES 256 Key Wrapping.
 #[derive(Clone)]
 pub struct JweA256KWEncipher {
     wrap_key: [u8; KEY_LEN],
@@ -27,7 +28,7 @@ impl JweEncipherOuter for JweA256KWEncipher {
                 key_to_wrap.len(),
                 self.wrap_key.len()
             );
-            JwtError::InvalidKey;
+            return Err(JwtError::InvalidKey);
         }
 
         let wrapping_key = AesKey::new_encrypt(&self.wrap_key).map_err(|ossl_err| {
@@ -38,17 +39,17 @@ impl JweEncipherOuter for JweA256KWEncipher {
         // Algorithm requires scratch space.
         let mut wrapped_key = vec![0; key_to_wrap.len() + KW_EXTRA];
 
-        let len =
-            wrap_key(&wrapping_key, None, &mut wrapped_key, &key_to_wrap).map_err(|ossl_err| {
-                debug!(?ossl_err);
-                JwtError::OpenSSLError
-            })?;
+        wrap_key(&wrapping_key, None, &mut wrapped_key, &key_to_wrap).map_err(|ossl_err| {
+            debug!(?ossl_err);
+            JwtError::OpenSSLError
+        })?;
 
         Ok(wrapped_key)
     }
 }
 
 impl JweA256KWEncipher {
+    /// Generate an ephemeral outer key.
     pub fn generate_ephemeral() -> Result<Self, JwtError> {
         let mut wrap_key = [0; KEY_LEN];
 
@@ -60,11 +61,13 @@ impl JweA256KWEncipher {
         Ok(JweA256KWEncipher { wrap_key })
     }
 
+    /// Given a JWE, encipher it's content to a compact form.
     pub fn encipher<E: JweEncipherInner>(&self, jwe: &Jwe) -> Result<JweCompact, JwtError> {
         let encipher = E::new_ephemeral()?;
         encipher.encipher_inner(self, jwe)
     }
 
+    /// Given a JWE in compact form, decipher and authenticate it's content.
     pub fn decipher(&self, jwec: &JweCompact) -> Result<Jwe, JwtError> {
         let wrap_key = AesKey::new_decrypt(&self.wrap_key).map_err(|ossl_err| {
             debug!(?ossl_err);
@@ -74,7 +77,7 @@ impl JweA256KWEncipher {
         let expected_cek_key_len = jwec.header.enc.key_len();
         let mut unwrapped_key = vec![0; expected_cek_key_len];
 
-        let len = unwrap_key(&wrap_key, None, &mut unwrapped_key, &jwec.content_enc_key).map_err(
+        unwrap_key(&wrap_key, None, &mut unwrapped_key, &jwec.content_enc_key).map_err(
             |ossl_err| {
                 debug!(?ossl_err);
                 JwtError::OpenSSLError

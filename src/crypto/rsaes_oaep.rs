@@ -8,6 +8,9 @@ use openssl::pkey::PKey;
 use openssl::pkey::Private;
 use openssl::rsa::{Padding, Rsa};
 
+/// A JWE outer decipher for RSA-OAEP. This type can only decipher - it can not
+/// create new enciphered JWEs. You should use [JweEcdhEsA128KWEncipher] or
+/// [JweA128KWEncipher]
 pub struct JweRSAOAEPDecipher {
     rsa_priv_key: PKey<Private>,
 }
@@ -26,6 +29,7 @@ impl TryFrom<Rsa<Private>> for JweRSAOAEPDecipher {
 }
 
 impl JweRSAOAEPDecipher {
+    /// Given a JWE in compact form, decipher and authenticate it's content.
     pub fn decipher(&self, jwec: &JweCompact) -> Result<Jwe, JwtError> {
         let expected_wrap_key_buffer_len = jwec.header.enc.key_len();
 

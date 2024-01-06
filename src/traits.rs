@@ -91,17 +91,24 @@ pub trait JwsSignable {
     fn post_process(&self, value: JwsCompact) -> Result<Self::Signed, JwtError>;
 }
 
-pub(crate) trait JweEncipherOuter {
+/// A trait defining types that provide outer content encryption key wrapping.
+pub trait JweEncipherOuter {
+    /// Given a protected header, set the algorithm used by this outer key wrap
     fn set_header_alg(&self, hdr: &mut JweProtectedHeader) -> Result<(), JwtError>;
 
+    /// Wrap the provided ephemeral key
     fn wrap_key(&self, key_to_wrap: &[u8]) -> Result<Vec<u8>, JwtError>;
 }
 
+/// A trait defining types that provide inner content encryption
 pub trait JweEncipherInner {
+    /// Generate a new ephemeral key for this inner encipher. Keys are always
+    /// ephemeral with inner types as they are "once use" only.
     fn new_ephemeral() -> Result<Self, JwtError>
     where
         Self: Sized;
 
+    /// Encipher the inner content of a jwe
     fn encipher_inner<O: JweEncipherOuter>(
         &self,
         outer: &O,

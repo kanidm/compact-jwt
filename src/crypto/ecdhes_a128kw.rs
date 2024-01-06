@@ -1,4 +1,4 @@
-use crate::compact::{EcCurve, JweAlg, JweCompact, JweEnc, JweProtectedHeader, Jwk};
+use crate::compact::{EcCurve, JweAlg, JweCompact, JweProtectedHeader, Jwk};
 use crate::jwe::Jwe;
 use crate::traits::*;
 use crate::JwtError;
@@ -15,6 +15,7 @@ use openssl::pkey_ctx::PkeyCtx;
 
 const COORD_SIZE: usize = 32;
 
+/// An ephemeral private key that can create enciphered JWE's. This type must only be used *once*.
 pub struct JweEcdhEsA128KWEncipher {
     priv_key: PKey<Private>,
     peer_public_key: PKey<Public>,
@@ -85,7 +86,7 @@ impl JweEncipherOuter for JweEcdhEsA128KWEncipher {
                 key_to_wrap.len(),
                 a128kw::KEY_LEN
             );
-            JwtError::InvalidKey;
+            return Err(JwtError::InvalidKey);
         }
 
         derive_key(&self.priv_key, &self.peer_public_key).and_then(|wrapping_key|
@@ -96,6 +97,8 @@ impl JweEncipherOuter for JweEcdhEsA128KWEncipher {
 }
 
 impl JweEcdhEsA128KWEncipher {
+    /// Generate a one-time private key pair used to derive a shared secret for the provided
+    /// public key.
     pub fn generate_ephemeral(peer_public_key: PKey<Public>) -> Result<Self, JwtError> {
         // Create a new private key for one-shot derivation to this peer.
         let ec_key = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)
@@ -116,17 +119,22 @@ impl JweEcdhEsA128KWEncipher {
         })
     }
 
+    /// Given a JWE, encipher it's content to a compact form.
     pub fn encipher<E: JweEncipherInner>(&self, jwe: &Jwe) -> Result<JweCompact, JwtError> {
         let encipher = E::new_ephemeral()?;
         encipher.encipher_inner(self, jwe)
     }
 }
 
+/// A Private Key that can recieve enciphered JWE's. The Encipher will use an ephemeral key
+/// for key agreement with this deciphers public key.
 pub struct JweEcdhEsA128KWDecipher {
     priv_key: PKey<Private>,
 }
 
 impl JweEcdhEsA128KWDecipher {
+    /// Generate a private/public key pair that others can wrap content to. This keypair *may*
+    /// be long lived.
     pub fn generate() -> Result<Self, JwtError> {
         let ec_key = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)
             .and_then(|group| EcKey::generate(&group))
@@ -143,7 +151,8 @@ impl JweEcdhEsA128KWDecipher {
         Ok(JweEcdhEsA128KWDecipher { priv_key })
     }
 
-    // For transmitting to the other provider.
+    /// Retrieve the public key of this decipher. This should be sent to the encipher
+    /// to use with it's ephemeral key for key agreement
     pub fn public_key(&self) -> Result<PKey<Public>, JwtError> {
         self.priv_key
             .ec_key()
@@ -160,6 +169,7 @@ impl JweEcdhEsA128KWDecipher {
             })
     }
 
+    /// Given a JWE in compact form, decipher and authenticate it's content.
     pub fn decipher(&self, jwec: &JweCompact) -> Result<Jwe, JwtError> {
         // Derive the shared secret from our private key + the JWE header public key.
 
@@ -257,16 +267,8 @@ fn derive_key(
 #[cfg(test)]
 mod tests {
     use super::{JweEcdhEsA128KWDecipher, JweEcdhEsA128KWEncipher};
-    use crate::compact::JweCompact;
     use crate::crypto::a128gcm::JweA128GCMEncipher;
-    use crate::traits::*;
-
-    use crate::compact::JweEnc;
     use crate::jwe::JweBuilder;
-
-    // use base64::{engine::general_purpose, Engine as _};
-    // use std::convert::TryFrom;
-    // use std::str::FromStr;
 
     #[test]
     fn ecdh_a128kw_outer_a128gcm_inner() {

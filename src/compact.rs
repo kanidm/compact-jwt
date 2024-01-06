@@ -365,6 +365,7 @@ pub struct JweProtectedHeader {
     // Don't allow extra header names?
 }
 
+/// A Compact JWE that is able to be deciphered or stringified for transmission
 #[derive(Clone)]
 pub struct JweCompact {
     pub(crate) header: JweProtectedHeader,

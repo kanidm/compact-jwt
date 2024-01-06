@@ -3,6 +3,7 @@
 use crate::compact::JweProtectedHeader;
 use serde::{Deserialize, Serialize};
 
+/// A builder to create a new JWS that can be enciphered.
 pub struct JweBuilder {
     pub(crate) header: JweProtectedHeader,
     pub(crate) payload: Vec<u8>,

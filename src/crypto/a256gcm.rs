@@ -53,7 +53,7 @@ impl JweEncipherInner for JweA256GCMEncipher {
         let mut header = jwe.header.clone();
         header.enc = JweEnc::A256GCM;
 
-        outer.set_header_alg(&mut header);
+        outer.set_header_alg(&mut header)?;
 
         // Clone the header and update it with our details.
         let hdr_b64 = serde_json::to_vec(&header)
