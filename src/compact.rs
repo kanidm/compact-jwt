@@ -377,7 +377,7 @@ pub struct JweCompact {
 }
 
 impl JweCompact {
-    /// Get the KID used to encipher this Jws if present
+    /// Get the KID used to encipher this Jwe if present
     pub fn get_jwk_kid(&self) -> Option<&str> {
         self.header.kid.as_deref()
     }
@@ -400,7 +400,8 @@ impl FromStr for JweCompact {
     type Err = JwtError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // split on the ".".
+        // split on the ".". Remember this means to split on '.' 4 times to create
+        // 5 string segments.
         let mut siter = s.splitn(5, '.');
 
         let hdr_str = siter.next().ok_or_else(|| {
