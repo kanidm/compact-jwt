@@ -1,12 +1,15 @@
-Compact JWT
-===========
+Compact JWT / JWE
+=================
 
 Json Web Tokens (JWT) are a popular method for creating signed transparent tokens that can be verified
 by clients and servers. They are enshrined in standards like OpenID Connect which causes them to
 be a widespread and required component of many modern web authentication system.
 
-JWT and Json Web Signature (JWS) however have a long track record of handling issues, which have
-led to security issues. This library will not be a complete implementation of JWT/JWS, instead
+Json Web Encryption (JWE) is an occasionally used method for sending secrets to a recipient
+or to create opaque tokens for services.
+
+JWE, JWT, and Json Web Signature (JWS) however have a long track record of handling issues, which have
+led to security issues. This library will not be a complete implementation of JWE/JWT/JWS, instead
 focusing on a minimal subset that can be secured and audited for correctness more closely within
 a limited set of use cases.
 
@@ -17,9 +20,13 @@ If you are:
 
 * creating ECDSA signed JWT tokens, or verify ECDSA signed JWT tokens
 * implementing OIDC as a relying party or authorisation server
-* wanting to use HMAC signatures
-* needing a minimal secure JWS implementation, this library is for you
+* wanting to use HMAC signatures for transparent json data
+* needing a minimal secure JWS implementation
 * using TPM bound keys for signing JWTs
+* creating opaque encrypted tokens protected with AES-128-GCM
+* receiving or sending encrypted data to an ECDSA key
+
+Then this library is for you
 
 If you need non-compact JWS, or other complex use cases, this library is not for you.
 
