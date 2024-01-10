@@ -119,7 +119,7 @@ impl JweEcdhEsA128KWEncipher {
         })
     }
 
-    /// Given a JWE, encipher it's content to a compact form.
+    /// Given a JWE, encipher its content to a compact form.
     pub fn encipher<E: JweEncipherInner + JweEncipherInnerK128>(
         &self,
         jwe: &Jwe,
@@ -155,7 +155,7 @@ impl JweEcdhEsA128KWDecipher {
     }
 
     /// Retrieve the public key of this decipher. This should be sent to the encipher
-    /// to use with it's ephemeral key for key agreement
+    /// to use with its ephemeral key for key agreement
     pub fn public_key(&self) -> Result<PKey<Public>, JwtError> {
         self.priv_key
             .ec_key()
@@ -172,7 +172,7 @@ impl JweEcdhEsA128KWDecipher {
             })
     }
 
-    /// Given a JWE in compact form, decipher and authenticate it's content.
+    /// Given a JWE in compact form, decipher and authenticate its content.
     pub fn decipher(&self, jwec: &JweCompact) -> Result<Jwe, JwtError> {
         // Derive the shared secret from our private key + the JWE header public key.
 

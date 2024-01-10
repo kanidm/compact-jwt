@@ -61,7 +61,7 @@ impl JweA256KWEncipher {
         Ok(JweA256KWEncipher { wrap_key })
     }
 
-    /// Given a JWE, encipher it's content to a compact form.
+    /// Given a JWE, encipher its content to a compact form.
     pub fn encipher<E: JweEncipherInner + JweEncipherInnerK256>(
         &self,
         jwe: &Jwe,
@@ -70,7 +70,7 @@ impl JweA256KWEncipher {
         encipher.encipher_inner(self, jwe)
     }
 
-    /// Given a JWE in compact form, decipher and authenticate it's content.
+    /// Given a JWE in compact form, decipher and authenticate its content.
     pub fn decipher(&self, jwec: &JweCompact) -> Result<Jwe, JwtError> {
         let wrap_key = AesKey::new_decrypt(&self.wrap_key).map_err(|ossl_err| {
             debug!(?ossl_err);

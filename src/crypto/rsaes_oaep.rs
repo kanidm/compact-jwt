@@ -29,7 +29,7 @@ impl TryFrom<Rsa<Private>> for JweRSAOAEPDecipher {
 }
 
 impl JweRSAOAEPDecipher {
-    /// Given a JWE in compact form, decipher and authenticate it's content.
+    /// Given a JWE in compact form, decipher and authenticate its content.
     pub fn decipher(&self, jwec: &JweCompact) -> Result<Jwe, JwtError> {
         let expected_wrap_key_buffer_len = jwec.header.enc.key_len();
 

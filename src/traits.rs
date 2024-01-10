@@ -109,7 +109,7 @@ pub trait JweEncipherInnerK256 {}
 /// A trait defining types that provide inner content encryption
 pub trait JweEncipherInner {
     /// Generate a new ephemeral key for this inner encipher. Keys are always
-    /// ephemeral with inner types as they are "once use" only.
+    /// ephemeral with inner types as they are "one use" only.
     fn new_ephemeral() -> Result<Self, JwtError>
     where
         Self: Sized;
