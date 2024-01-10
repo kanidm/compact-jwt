@@ -64,12 +64,6 @@ impl Jwe {
     pub fn from_json<'a, T: Deserialize<'a>>(&'a self) -> Result<T, serde_json::Error> {
         serde_json::from_slice(self.payload())
     }
-
-    /*
-    pub(crate) fn set_typ(&mut self, typ: Option<&str>) {
-        self.header.typ = typ.map(|s| s.to_string());
-    }
-    */
 }
 
 #[cfg(all(feature = "openssl", test))]

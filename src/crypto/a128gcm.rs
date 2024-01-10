@@ -125,7 +125,6 @@ pub(crate) fn aes_gcm_encipher(
             error!(?ossl_err);
             JwtError::OpenSSLError
         })?;
-    // encrypter.pad(true);
 
     // Feed in additional data to be checked. Must be called before update.
     encrypter
