@@ -8,6 +8,8 @@ use openssl::pkey::PKey;
 use openssl::pkey::Private;
 use openssl::rsa::{Padding, Rsa};
 
+use super::JweCipher;
+
 /// A JWE outer decipher for RSA-OAEP. This type can only decipher - it can not
 /// create new enciphered JWEs. You should use [crate::crypto::JweEcdhEsA128KWEncipher] or
 /// [crate::crypto::JweA128KWEncipher]
@@ -29,9 +31,7 @@ impl TryFrom<Rsa<Private>> for JweRSAOAEPDecipher {
 }
 
 impl JweRSAOAEPDecipher {
-    /// [MS-OAPXBC] 3.2.5.1.2.2 Designates the CEK as the session key for
-    /// future requests (and the payload is empty, in this case).
-    pub fn decipher_cek(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
+    fn unwrap_key(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
         let expected_wrap_key_buffer_len = jwec.header.enc.key_len();
 
         // Decrypt cek
@@ -83,9 +83,18 @@ impl JweRSAOAEPDecipher {
         Ok(unwrapped_key)
     }
 
+    /// [MS-OAPXBC] 3.2.5.1.2.2 Designates the CEK as the session key for
+    /// future requests (and the payload is empty, in this case). Yield the
+    /// associated cipher that can encipher and decipher future messages.
+    pub fn decipher_cek(&self, jwec: &JweCompact) -> Result<JweCipher, JwtError> {
+        let unwrapped_key = self.unwrap_key(jwec)?;
+
+        jwec.header.enc.yield_cipher(unwrapped_key.as_slice())
+    }
+
     /// Given a JWE in compact form, decipher and authenticate its content.
     pub fn decipher(&self, jwec: &JweCompact) -> Result<Jwe, JwtError> {
-        let unwrapped_key = self.decipher_cek(jwec)?;
+        let unwrapped_key = self.unwrap_key(jwec)?;
 
         let payload = jwec
             .header
