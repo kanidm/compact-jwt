@@ -44,6 +44,8 @@ pub enum JwtError {
     InvalidKey,
     /// A required header value is not set
     CriticalMissingHeaderValue,
+    /// The requested JWE cipher is not available.
+    CipherUnavailable,
 }
 
 impl fmt::Display for JwtError {
