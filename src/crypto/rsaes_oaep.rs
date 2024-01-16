@@ -12,8 +12,8 @@ use openssl::pkey::Private;
 use openssl::pkey::Public;
 use openssl::rsa::{Padding, Rsa};
 
-/// A JWE outer decipher for RSA-OAEP. This type can only decipher - it can not
-/// create new enciphered JWEs. You should use [crate::crypto::JweEcdhEsA128KWEncipher] or
+/// A JWE outer decipher for RSA-OAEP.
+/// You should prefer [crate::crypto::JweEcdhEsA128KWEncipher] or
 /// [crate::crypto::JweA128KWEncipher]
 pub struct JweRSAOAEPDecipher {
     rsa_priv_key: PKey<Private>,
@@ -101,6 +101,8 @@ impl JweRSAOAEPDecipher {
     }
 }
 
+/// A JWE outer encipher for RSA-OAEP. This type can only encipher.
+/// You should prefer [crate::crypto::JweEcdhEsA128KWEncipher] or [crate::crypto::JweA128KWEncipher]
 pub struct JweRSAOAEPEncipher {
     rsa_pub_key: PKey<Public>,
 }

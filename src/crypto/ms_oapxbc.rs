@@ -162,9 +162,42 @@ impl JwsVerifier for MsOapxbcSessionKey {
 
 #[cfg(test)]
 mod tests {
+    use super::MsOapxbcSessionKey;
+    use crate::jwe::JweBuilder;
+    use openssl::rsa::Rsa;
+
+    #[test]
+    fn ms_oapxbc_reflexive_test() {
+        let _ = tracing_subscriber::fmt::try_init();
+
+        let rsa_priv_key = Rsa::generate(2048).unwrap();
+        let rsa_pub_key = Rsa::from_public_components(
+            rsa_priv_key.n().to_owned().unwrap(),
+            rsa_priv_key.e().to_owned().unwrap(),
+        )
+        .unwrap();
+
+        let (server_key, jwec) =
+            MsOapxbcSessionKey::begin_rsa_oaep_key_agreement(rsa_pub_key).unwrap();
+
+        let client_key =
+            MsOapxbcSessionKey::complete_rsa_oaep_key_agreement(rsa_priv_key, &jwec).unwrap();
+
+        let input = vec![1; 256];
+        let jweb = JweBuilder::from(input.clone()).build();
+
+        let jwe_encrypted = client_key.encipher(&jweb).expect("Unable to encrypt.");
+
+        // Decrypt with the partner.
+        let decrypted = server_key
+            .decipher(&jwe_encrypted)
+            .expect("Unable to decrypt.");
+
+        assert_eq!(decrypted.payload(), input);
+    }
 
     #[test]
     fn ms_oapxbc_3_2_5_1_3_prt_request_response() {
-        // We need some test parameters here.
+        // We need some test params!
     }
 }

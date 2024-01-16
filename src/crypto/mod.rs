@@ -34,7 +34,7 @@ pub use a128kw::JweA128KWEncipher;
 pub use a256kw::JweA256KWEncipher;
 pub use ecdhes_a128kw::{JweEcdhEsA128KWDecipher, JweEcdhEsA128KWEncipher};
 pub use ms_oapxbc::MsOapxbcSessionKey;
-pub use rsaes_oaep::JweRSAOAEPDecipher;
+pub use rsaes_oaep::{JweRSAOAEPDecipher, JweRSAOAEPEncipher};
 
 #[cfg(feature = "hsm-crypto")]
 pub use tpm::JwsTpmSigner;
