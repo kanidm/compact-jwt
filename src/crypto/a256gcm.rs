@@ -27,7 +27,7 @@ impl TryFrom<&[u8]> for JweA256GCMEncipher {
             return Err(JwtError::InvalidKey);
         }
 
-        let mut aes_key = [0; 32];
+        let mut aes_key = [0; KEY_LEN];
         aes_key.copy_from_slice(r_aes_key);
 
         Ok(JweA256GCMEncipher { aes_key })
@@ -67,6 +67,7 @@ impl JweEncipherInner for JweA256GCMEncipher {
 
         let content_enc_key = outer.wrap_key(&self.aes_key)?;
 
+        // IV must always be random!
         let mut iv = vec![0; IV_LEN];
         rand_bytes(&mut iv).map_err(|ossl_err| {
             debug!(?ossl_err);
@@ -94,6 +95,10 @@ impl JweEncipherInner for JweA256GCMEncipher {
 }
 
 impl JweA256GCMEncipher {
+    pub(crate) fn ms_oapxbc_key(&self) -> &[u8] {
+        &self.aes_key
+    }
+
     pub fn key_len() -> usize {
         KEY_LEN
     }

@@ -33,6 +33,7 @@ pub use x509::{JwsX509Verifier, JwsX509VerifierBuilder};
 pub use a128kw::JweA128KWEncipher;
 pub use a256kw::JweA256KWEncipher;
 pub use ecdhes_a128kw::{JweEcdhEsA128KWDecipher, JweEcdhEsA128KWEncipher};
+pub use ms_oapxbc::MsOapxbcSessionKey;
 pub use rsaes_oaep::JweRSAOAEPDecipher;
 
 #[cfg(feature = "hsm-crypto")]

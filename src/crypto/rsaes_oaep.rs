@@ -1,13 +1,15 @@
-use crate::compact::JweCompact;
+use crate::compact::{JweAlg, JweCompact};
 use crate::jwe::Jwe;
 use crate::JwtError;
 
-use super::ms_oapxbc::MsOapxbcSessionKey;
+use crate::compact::JweProtectedHeader;
+use crate::traits::{JweEncipherInner, JweEncipherOuter};
 
-use openssl::encrypt::Decrypter;
+use openssl::encrypt::{Decrypter, Encrypter};
 use openssl::hash::MessageDigest;
 use openssl::pkey::PKey;
 use openssl::pkey::Private;
+use openssl::pkey::Public;
 use openssl::rsa::{Padding, Rsa};
 
 /// A JWE outer decipher for RSA-OAEP. This type can only decipher - it can not
@@ -31,7 +33,7 @@ impl TryFrom<Rsa<Private>> for JweRSAOAEPDecipher {
 }
 
 impl JweRSAOAEPDecipher {
-    fn unwrap_key(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
+    pub(crate) fn unwrap_key(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
         let expected_wrap_key_buffer_len = jwec.header.enc.key_len();
 
         // Decrypt cek
@@ -83,18 +85,6 @@ impl JweRSAOAEPDecipher {
         Ok(unwrapped_key)
     }
 
-    /// [MS-OAPXBC] 3.2.5.1.2.2 Designates the CEK as the session key for
-    /// future requests (and the payload is empty, in this case). This will
-    /// yield the CEK as an [MsOapxbcSessionKey]
-    pub fn decipher_cek_as_ms_oapxbc_session_key(
-        &self,
-        jwec: &JweCompact,
-    ) -> Result<MsOapxbcSessionKey, JwtError> {
-        let unwrapped_key = self.unwrap_key(jwec)?;
-
-        MsOapxbcSessionKey::try_from_key_buffer(jwec.header.enc, unwrapped_key.as_slice())
-    }
-
     /// Given a JWE in compact form, decipher and authenticate its content.
     pub fn decipher(&self, jwec: &JweCompact) -> Result<Jwe, JwtError> {
         let unwrapped_key = self.unwrap_key(jwec)?;
@@ -111,13 +101,96 @@ impl JweRSAOAEPDecipher {
     }
 }
 
+pub struct JweRSAOAEPEncipher {
+    rsa_pub_key: PKey<Public>,
+}
+
+impl TryFrom<Rsa<Public>> for JweRSAOAEPEncipher {
+    type Error = JwtError;
+
+    fn try_from(value: Rsa<Public>) -> Result<Self, Self::Error> {
+        let rsa_pub_key = PKey::from_rsa(value).map_err(|ossl_err| {
+            debug!(?ossl_err);
+            JwtError::OpenSSLError
+        })?;
+
+        Ok(JweRSAOAEPEncipher { rsa_pub_key })
+    }
+}
+
+impl JweRSAOAEPEncipher {
+    /// Given a JWE, encipher its content to a compact form.
+    pub fn encipher<E: JweEncipherInner>(&self, jwe: &Jwe) -> Result<JweCompact, JwtError> {
+        let encipher = E::new_ephemeral()?;
+        encipher.encipher_inner(self, jwe)
+    }
+}
+
+impl JweEncipherOuter for JweRSAOAEPEncipher {
+    fn set_header_alg(&self, hdr: &mut JweProtectedHeader) -> Result<(), JwtError> {
+        hdr.alg = JweAlg::RSA_OAEP;
+        Ok(())
+    }
+
+    fn wrap_key(&self, key_to_wrap: &[u8]) -> Result<Vec<u8>, JwtError> {
+        let mut wrap_key_encrypter = Encrypter::new(&self.rsa_pub_key).map_err(|ossl_err| {
+            debug!(?ossl_err);
+            JwtError::OpenSSLError
+        })?;
+
+        wrap_key_encrypter
+            .set_rsa_padding(Padding::PKCS1_OAEP)
+            .map_err(|ossl_err| {
+                debug!(?ossl_err);
+                JwtError::OpenSSLError
+            })?;
+
+        wrap_key_encrypter
+            .set_rsa_mgf1_md(MessageDigest::sha1())
+            .map_err(|ossl_err| {
+                debug!(?ossl_err);
+                JwtError::OpenSSLError
+            })?;
+
+        wrap_key_encrypter
+            .set_rsa_oaep_md(MessageDigest::sha1())
+            .map_err(|ossl_err| {
+                debug!(?ossl_err);
+                JwtError::OpenSSLError
+            })?;
+
+        let buf_len = wrap_key_encrypter
+            .encrypt_len(key_to_wrap)
+            .map_err(|ossl_err| {
+                debug!(?ossl_err);
+                JwtError::OpenSSLError
+            })?;
+
+        let mut wrapped_key = vec![0; buf_len];
+
+        let encoded_len = wrap_key_encrypter
+            .encrypt(key_to_wrap, &mut wrapped_key)
+            .map_err(|ossl_err| {
+                debug!(?ossl_err);
+                JwtError::OpenSSLError
+            })?;
+
+        wrapped_key.truncate(encoded_len);
+
+        Ok(wrapped_key)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::JweRSAOAEPDecipher;
+    use super::{JweRSAOAEPDecipher, JweRSAOAEPEncipher};
     use crate::compact::JweCompact;
+    use crate::crypto::a256gcm::JweA256GCMEncipher;
     use base64::{engine::general_purpose, Engine as _};
     use std::convert::TryFrom;
     use std::str::FromStr;
+
+    use crate::jwe::JweBuilder;
 
     use openssl::bn;
     use openssl::pkey::Private;
@@ -259,5 +332,36 @@ mod tests {
                 105, 109, 97, 103, 105, 110, 97, 116, 105, 111, 110, 46
             ]
         );
+    }
+
+    #[test]
+    fn reflexive_rsa_oaep_validation() {
+        let _ = tracing_subscriber::fmt::try_init();
+
+        let input = vec![1; 256];
+        let jweb = JweBuilder::from(input.clone()).build();
+
+        let rsa_priv_key = Rsa::generate(2048).unwrap();
+
+        let rsa_pub_key = Rsa::from_public_components(
+            rsa_priv_key.n().to_owned().unwrap(),
+            rsa_priv_key.e().to_owned().unwrap(),
+        )
+        .unwrap();
+
+        let jwe_rsa_oaep_decipher = JweRSAOAEPDecipher::try_from(rsa_priv_key).unwrap();
+
+        let jwe_rsa_oaep_encipher = JweRSAOAEPEncipher::try_from(rsa_pub_key).unwrap();
+
+        let jwe_encrypted = jwe_rsa_oaep_encipher
+            .encipher::<JweA256GCMEncipher>(&jweb)
+            .expect("Unable to encrypt.");
+
+        // Decrypt with the partner.
+        let decrypted = jwe_rsa_oaep_decipher
+            .decipher(&jwe_encrypted)
+            .expect("Unable to decrypt.");
+
+        assert_eq!(decrypted.payload(), input);
     }
 }
