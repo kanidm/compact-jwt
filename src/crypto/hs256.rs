@@ -74,7 +74,6 @@ impl JwsHs256Signer {
     }
 }
 
-#[cfg(test)]
 impl TryFrom<&[u8]> for JwsHs256Signer {
     type Error = JwtError;
 

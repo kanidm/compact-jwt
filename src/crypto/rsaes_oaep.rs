@@ -2,13 +2,13 @@ use crate::compact::JweCompact;
 use crate::jwe::Jwe;
 use crate::JwtError;
 
+use super::ms_oapxbc::MsOapxbcSessionKey;
+
 use openssl::encrypt::Decrypter;
 use openssl::hash::MessageDigest;
 use openssl::pkey::PKey;
 use openssl::pkey::Private;
 use openssl::rsa::{Padding, Rsa};
-
-use super::JweCipher;
 
 /// A JWE outer decipher for RSA-OAEP. This type can only decipher - it can not
 /// create new enciphered JWEs. You should use [crate::crypto::JweEcdhEsA128KWEncipher] or
@@ -84,12 +84,15 @@ impl JweRSAOAEPDecipher {
     }
 
     /// [MS-OAPXBC] 3.2.5.1.2.2 Designates the CEK as the session key for
-    /// future requests (and the payload is empty, in this case). Yield the
-    /// associated cipher that can encipher and decipher future messages.
-    pub fn decipher_cek(&self, jwec: &JweCompact) -> Result<JweCipher, JwtError> {
+    /// future requests (and the payload is empty, in this case). This will
+    /// yield the CEK as an [MsOapxbcSessionKey]
+    pub fn decipher_cek_as_ms_oapxbc_session_key(
+        &self,
+        jwec: &JweCompact,
+    ) -> Result<MsOapxbcSessionKey, JwtError> {
         let unwrapped_key = self.unwrap_key(jwec)?;
 
-        jwec.header.enc.yield_cipher(unwrapped_key.as_slice())
+        MsOapxbcSessionKey::try_from_key_buffer(jwec.header.enc, unwrapped_key.as_slice())
     }
 
     /// Given a JWE in compact form, decipher and authenticate its content.
