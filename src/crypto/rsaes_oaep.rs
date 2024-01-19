@@ -36,6 +36,8 @@ impl JweRSAOAEPDecipher {
     pub(crate) fn unwrap_key(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
         let expected_wrap_key_buffer_len = jwec.header.enc.key_len();
 
+        trace!(?expected_wrap_key_buffer_len);
+
         // Decrypt cek
         let mut wrap_key_decrypter = Decrypter::new(&self.rsa_priv_key).map_err(|ossl_err| {
             debug!(?ossl_err);
@@ -63,7 +65,8 @@ impl JweRSAOAEPDecipher {
                 JwtError::OpenSSLError
             })?;
 
-        // Rsa oaep will often work on bigger block sizes, so we need a larger buffer and then we can copy.
+        // Rsa oaep will often work on bigger block sizes, so we need a larger buffer and then we
+        // can copy later. First we check the expected length of the decryption.
         let buf_len = wrap_key_decrypter
             .decrypt_len(&jwec.content_enc_key)
             .map_err(|ossl_err| {
@@ -71,7 +74,13 @@ impl JweRSAOAEPDecipher {
                 JwtError::OpenSSLError
             })?;
 
+        trace!(?jwec.content_enc_key);
+
+        trace!(enc_len = ?jwec.content_enc_key.len());
+
         let mut unwrapped_key = vec![0; buf_len];
+
+        trace!(?buf_len);
 
         wrap_key_decrypter
             .decrypt(&jwec.content_enc_key, &mut unwrapped_key)
@@ -79,6 +88,8 @@ impl JweRSAOAEPDecipher {
                 debug!(?ossl_err);
                 JwtError::OpenSSLError
             })?;
+
+        trace!(?unwrapped_key);
 
         unwrapped_key.truncate(expected_wrap_key_buffer_len);
 
