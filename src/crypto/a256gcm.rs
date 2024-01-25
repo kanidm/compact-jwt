@@ -19,6 +19,13 @@ pub struct JweA256GCMEncipher {
     aes_key: [u8; KEY_LEN],
 }
 
+#[cfg(test)]
+impl JweA256GCMEncipher {
+    pub(crate) fn assert_key(&self, key: &[u8]) -> bool {
+        self.aes_key == key
+    }
+}
+
 impl TryFrom<&[u8]> for JweA256GCMEncipher {
     type Error = JwtError;
 

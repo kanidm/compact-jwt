@@ -36,8 +36,3 @@ hex = "0.4"
 
 [dev-dependencies]
 tracing-subscriber = "^0.3.11"
-
-rsa = "0.9"
-pkcs8 = "0.10"
-pkcs1 = "0.7"
-sha1 = "0.10"
