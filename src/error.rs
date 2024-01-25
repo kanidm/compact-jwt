@@ -46,6 +46,8 @@ pub enum JwtError {
     CriticalMissingHeaderValue,
     /// The requested JWE cipher is not available.
     CipherUnavailable,
+    /// The JWE algorithm does not match this decipher.
+    AlgorithmUnavailable,
 }
 
 impl fmt::Display for JwtError {

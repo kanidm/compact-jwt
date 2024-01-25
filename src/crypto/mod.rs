@@ -11,6 +11,7 @@ mod hs256;
 mod rs256;
 mod x509;
 
+mod ms_oapxbc;
 mod rsaes_oaep;
 
 mod a128cbc_hs256;
@@ -32,7 +33,8 @@ pub use x509::{JwsX509Verifier, JwsX509VerifierBuilder};
 pub use a128kw::JweA128KWEncipher;
 pub use a256kw::JweA256KWEncipher;
 pub use ecdhes_a128kw::{JweEcdhEsA128KWDecipher, JweEcdhEsA128KWEncipher};
-pub use rsaes_oaep::JweRSAOAEPDecipher;
+pub use ms_oapxbc::MsOapxbcSessionKey;
+pub use rsaes_oaep::{JweRSAOAEPDecipher, JweRSAOAEPEncipher};
 
 #[cfg(feature = "hsm-crypto")]
 pub use tpm::JwsTpmSigner;
@@ -97,31 +99,7 @@ impl JweEnc {
                 .and_then(|jwe_decipher| jwe_decipher.decipher_inner(jwec)),
         }
     }
-
-    pub(crate) fn yield_cipher(self, key_buffer: &[u8]) -> Result<JweCipher, JwtError> {
-        match self {
-            JweEnc::A128GCM => {
-                a128gcm::JweA128GCMEncipher::try_from(key_buffer).map(JweCipher::A128GCM)
-            }
-            JweEnc::A256GCM => {
-                a256gcm::JweA256GCMEncipher::try_from(key_buffer).map(JweCipher::A256GCM)
-            }
-            JweEnc::A128CBC_HS256 => Err(JwtError::CipherUnavailable),
-        }
-    }
 }
-
-/// A [MS-OAPXBC] 3.2.5.1.2.2 yielded CEK. This is used as a form of key agreement
-/// for MS clients, where this CEK can now be used to encipher and decipher arbitrary
-/// content.
-pub enum JweCipher {
-    /// AES-128-GCM CEK
-    A128GCM(a128gcm::JweA128GCMEncipher),
-    /// AES-256-GCM CEK
-    A256GCM(a256gcm::JweA256GCMEncipher),
-}
-
-// TODO: We need to support arbitrary message enc/dec here. Need to check what MS expects.
 
 impl JweCompact {
     #[cfg(test)]

@@ -305,6 +305,9 @@ pub enum JweAlg {
     /// RSA-OAEP
     #[serde(rename = "RSA-OAEP")]
     RSA_OAEP,
+    /// Direct
+    #[serde(rename = "dir")]
+    DIRECT,
 }
 
 #[derive(Debug, Serialize, Copy, Clone, Deserialize, PartialEq, Default)]
