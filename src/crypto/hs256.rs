@@ -85,7 +85,7 @@ impl TryFrom<&[u8]> for JwsHs256Signer {
         let digest = hash::MessageDigest::sha256();
 
         let kid = hash::hash(digest, buf)
-            .map(|hashout| hex::encode(hashout))
+            .map(hex::encode)
             .map_err(|_| JwtError::OpenSSLError)?;
 
         let skey = pkey::PKey::hmac(buf).map_err(|e| {
