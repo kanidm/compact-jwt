@@ -11,9 +11,15 @@ use super::rsaes_oaep::{JweRSAOAEPDecipher, JweRSAOAEPEncipher};
 
 use crate::jwe::JweBuilder;
 
+use openssl::hash::MessageDigest;
 use openssl::pkey::Private;
 use openssl::pkey::Public;
 use openssl::rsa::Rsa;
+use openssl::symm::decrypt;
+use openssl::symm::Cipher;
+use openssl_kdf::{perform_kdf, KdfArgument, KdfKbMode, KdfMacType, KdfType};
+
+use base64::{engine::general_purpose, Engine as _};
 
 /// A [MS-OAPXBC] 3.2.5.1.2.2 yielded session key. This is used as a form of key agreement
 /// for MS clients, where this key can now be used to encipher and decipher arbitrary
@@ -26,6 +32,14 @@ pub enum MsOapxbcSessionKey {
         /// the hmac key for this session
         hmac_key: JwsHs256Signer,
     },
+}
+
+/// The PRT Protocol version
+pub enum PrtVersion {
+    /// PRT Protocol version 2
+    V2,
+    /// PRT Protocol version 3
+    V3,
 }
 
 #[cfg(test)]
@@ -91,7 +105,7 @@ impl MsOapxbcSessionKey {
 
 impl MsOapxbcSessionKey {
     /// Given a JWE in compact form, decipher and authenticate its content.
-    pub fn decipher(&self, jwec: &JweCompact) -> Result<Jwe, JwtError> {
+    pub fn decipher(&self, jwec: &JweCompact, prt_vers: PrtVersion) -> Result<Jwe, JwtError> {
         // Alg must be direct.
         if jwec.header.alg != JweAlg::DIRECT {
             return Err(JwtError::AlgorithmUnavailable);
@@ -104,10 +118,45 @@ impl MsOapxbcSessionKey {
                     return Err(JwtError::CipherUnavailable);
                 }
 
-                aes_key.decipher_inner(jwec).map(|payload| Jwe {
-                    header: jwec.header.clone(),
-                    payload,
-                })
+                // If a ctx is present in the header, derive the session key
+                let mut session_key = aes_key.clone();
+                if let Some(ctx) = &jwec.header.ctx {
+                    let decoded_ctx = general_purpose::STANDARD
+                        .decode(ctx)
+                        .map_err(|_| JwtError::InvalidBase64)?;
+                    let args = [
+                        &KdfArgument::KbMode(KdfKbMode::Counter),
+                        &KdfArgument::Mac(KdfMacType::Hmac(MessageDigest::sha256())),
+                        &KdfArgument::Salt(b"AzureAD-SecureConversation"),
+                        &KdfArgument::KbInfo(&decoded_ctx),
+                        &KdfArgument::Key(&session_key.aes_key),
+                    ];
+                    let derived_key =
+                        perform_kdf(KdfType::KeyBased, &args, session_key.aes_key.len())
+                            .map_err(|_| JwtError::InvalidKey)?;
+                    session_key = JweA256GCMEncipher::try_from(derived_key.as_slice())?;
+                }
+
+                match prt_vers {
+                    PrtVersion::V2 => {
+                        let cipher = Cipher::aes_256_cbc();
+                        let decrypted = decrypt(
+                            cipher,
+                            &session_key.aes_key,
+                            Some(&jwec.iv),
+                            &jwec.ciphertext,
+                        )
+                        .map_err(|_| JwtError::OpenSSLError)?;
+                        Ok(Jwe {
+                            header: jwec.header.clone(),
+                            payload: decrypted,
+                        })
+                    }
+                    PrtVersion::V3 => aes_key.decipher_inner(jwec).map(|payload| Jwe {
+                        header: jwec.header.clone(),
+                        payload,
+                    }),
+                }
             }
         }
     }

@@ -16,7 +16,7 @@ const AUTH_TAG_LEN: usize = 16;
 
 #[derive(Clone)]
 pub struct JweA256GCMEncipher {
-    aes_key: [u8; KEY_LEN],
+    pub(crate) aes_key: [u8; KEY_LEN],
 }
 
 #[cfg(test)]

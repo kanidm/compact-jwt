@@ -365,6 +365,8 @@ pub struct JweProtectedHeader {
         skip_serializing_if = "Option::is_none"
     )]
     pub(crate) x5t_s256: Option<()>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) ctx: Option<String>,
     // Don't allow extra header names?
 }
 
