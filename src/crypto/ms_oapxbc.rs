@@ -14,10 +14,14 @@ use crate::jwe::JweBuilder;
 use openssl::hash::MessageDigest;
 use openssl::pkey::Private;
 use openssl::pkey::Public;
+use openssl::rand;
 use openssl::rsa::Rsa;
 use openssl::symm::Cipher;
 
 use base64::{engine::general_purpose, Engine as _};
+
+const AAD_KDF_LABEL: &[u8; 26] = b"AzureAD-SecureConversation";
+const CTX_NONCE_LEN: usize = 32;
 
 /// A [MS-OAPXBC] 3.2.5.1.2.2 yielded session key. This is used as a form of key agreement
 /// for MS clients, where this key can now be used to encipher and decipher arbitrary
@@ -27,8 +31,6 @@ pub enum MsOapxbcSessionKey {
     A256GCM {
         /// The aes key for this session
         aes_key: [u8; A256_KEY_LEN],
-        // /// the hmac key for this session
-        // hmac_key: JwsHs256Signer,
     },
 }
 
@@ -101,12 +103,9 @@ impl MsOapxbcSessionKey {
         };
 
         let derived_key = match &self {
-            MsOapxbcSessionKey::A256GCM { aes_key, .. } => nist_sp800_108_kdf_hmac_sha256(
-                aes_key,
-                &ctx_bytes,
-                b"AzureAD-SecureConversation",
-                A256_KEY_LEN,
-            )?,
+            MsOapxbcSessionKey::A256GCM { aes_key } => {
+                nist_sp800_108_kdf_hmac_sha256(aes_key, &ctx_bytes, AAD_KDF_LABEL, A256_KEY_LEN)?
+            }
         };
 
         let cipher = Cipher::aes_256_cbc();
@@ -148,12 +147,72 @@ impl MsOapxbcSessionKey {
         let outer = JweDirect::default();
 
         match &self {
-            MsOapxbcSessionKey::A256GCM { aes_key, .. } => {
+            MsOapxbcSessionKey::A256GCM { aes_key } => {
                 let a256gcm = JweA256GCMEncipher::from(aes_key);
 
                 a256gcm.encipher_inner(&outer, jwe)
             }
         }
+    }
+
+    /// Directly use the session key to perform a HMAC signature over a JWS.
+    pub fn sign_direct<V: JwsSignable>(&self, jws: &V) -> Result<V::Signed, JwtError> {
+        let hmac_key = match self {
+            MsOapxbcSessionKey::A256GCM { aes_key } => {
+                JwsHs256Signer::try_from(aes_key.as_slice())?
+            }
+        };
+
+        hmac_key.sign(jws)
+    }
+
+    /// Use the session key to derive a one-time HMAC key for signing this JWS.
+    pub fn sign<V: JwsSignable>(&self, jws: &V) -> Result<V::Signed, JwtError> {
+        let mut nonce = [0; CTX_NONCE_LEN];
+        rand::rand_bytes(&mut nonce).map_err(|e| {
+            error!("{:?}", e);
+            JwtError::OpenSSLError
+        })?;
+
+        let derived_key = match &self {
+            MsOapxbcSessionKey::A256GCM { aes_key } => {
+                nist_sp800_108_kdf_hmac_sha256(aes_key, &nonce, AAD_KDF_LABEL, A256_KEY_LEN)?
+            }
+        };
+
+        let hmac_key = JwsHs256Signer::try_from(derived_key.as_slice())?;
+
+        let mut signer = MsOapxbcSessionKeyHs256 { nonce, hmac_key };
+
+        signer.sign(jws)
+    }
+
+    pub fn verify<V: JwsVerifiable>(&self, jwsc: &V) -> Result<V::Verified, JwtError> {
+        let hmac_key = if let Some(ctx) = &jwsc.data().header.ctx {
+            let ctx_bytes = general_purpose::STANDARD
+                .decode(ctx)
+                .map_err(|_| JwtError::InvalidBase64)?;
+
+            let derived_key = match &self {
+                MsOapxbcSessionKey::A256GCM { aes_key } => nist_sp800_108_kdf_hmac_sha256(
+                    aes_key,
+                    &ctx_bytes,
+                    AAD_KDF_LABEL,
+                    A256_KEY_LEN,
+                )?,
+            };
+
+            JwsHs256Signer::try_from(derived_key.as_slice())?
+        } else {
+            // Assume direct signature.
+            match self {
+                MsOapxbcSessionKey::A256GCM { aes_key } => {
+                    JwsHs256Signer::try_from(aes_key.as_slice())?
+                }
+            }
+        };
+
+        hmac_key.verify(jwsc)
     }
 }
 
@@ -171,8 +230,8 @@ impl JweEncipherOuter for JweDirect {
     }
 }
 
-pub struct MsOapxbcSessionKeyHs256 {
-    nonce: [u8; 16],
+struct MsOapxbcSessionKeyHs256 {
+    nonce: [u8; CTX_NONCE_LEN],
     hmac_key: JwsHs256Signer,
 }
 
@@ -182,21 +241,19 @@ impl JwsSigner for MsOapxbcSessionKeyHs256 {
     }
 
     fn update_header(&self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
+        let ctx = general_purpose::STANDARD.encode(self.nonce);
+        header.ctx = Some(ctx);
+
         self.hmac_key.update_header(header)
     }
 
     fn sign<V: JwsSignable>(&self, jws: &V) -> Result<V::Signed, JwtError> {
-        self.hmac_key.sign(jws)
-    }
-}
+        let mut sign_data = jws.data()?;
 
-impl JwsVerifier for MsOapxbcSessionKeyHs256 {
-    fn get_kid(&self) -> Option<&str> {
-        JwsVerifier::get_kid(&self.hmac_key)
-    }
+        // Let the signer update the header as required.
+        self.update_header(&mut sign_data.header)?;
 
-    fn verify<V: JwsVerifiable>(&self, jwsc: &V) -> Result<V::Verified, JwtError> {
-        self.hmac_key.verify(jwsc)
+        self.hmac_key.sign_inner(jws, sign_data)
     }
 }
 
@@ -226,6 +283,7 @@ mod tests {
     use super::MsOapxbcSessionKey;
     use crate::compact::JweCompact;
     use crate::jwe::JweBuilder;
+    use crate::jws::JwsBuilder;
     use base64::{engine::general_purpose, Engine as _};
     use openssl::bn;
     use openssl::pkey::Private;
@@ -234,7 +292,7 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
-    fn ms_oapxbc_reflexive_test() {
+    fn ms_oapxbc_reflexive_encryption_test() {
         let _ = tracing_subscriber::fmt::try_init();
 
         let rsa_priv_key = Rsa::generate(2048).unwrap();
@@ -261,6 +319,34 @@ mod tests {
             .expect("Unable to decrypt.");
 
         assert_eq!(decrypted.payload(), input);
+    }
+
+    #[test]
+    fn ms_oapxbc_reflexive_signature_test() {
+        let _ = tracing_subscriber::fmt::try_init();
+
+        let rsa_priv_key = Rsa::generate(2048).unwrap();
+        let rsa_pub_key = Rsa::from_public_components(
+            rsa_priv_key.n().to_owned().unwrap(),
+            rsa_priv_key.e().to_owned().unwrap(),
+        )
+        .unwrap();
+
+        let (server_key, jwec) =
+            MsOapxbcSessionKey::begin_rsa_oaep_key_agreement(rsa_pub_key).unwrap();
+
+        let client_key =
+            MsOapxbcSessionKey::complete_rsa_oaep_key_agreement(rsa_priv_key, &jwec).unwrap();
+
+        let input = vec![1; 256];
+        let jws = JwsBuilder::from(input.clone()).build();
+
+        let jws_signed = client_key.sign(&jws).expect("Unable to sign.");
+
+        // Decrypt with the partner.
+        let verified = server_key.verify(&jws_signed).expect("Unable to verify.");
+
+        assert_eq!(verified.payload(), input);
     }
 
     fn rsa_from_private_components(

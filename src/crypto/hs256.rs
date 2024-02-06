@@ -7,6 +7,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 
 use crate::compact::{JwaAlg, JwsCompact, ProtectedHeader};
+use crate::jws::JwsCompactSign2Data;
 use crate::traits::*;
 use base64::{engine::general_purpose, Engine as _};
 
@@ -67,10 +68,54 @@ impl JwsHs256Signer {
         })?;
 
         let kid = hash::hash(digest, &kid)
-            .map(hex::encode)
+            .map(|out| {
+                let half = out.len() / 2;
+                hex::encode(out.split_at(half).0)
+            })
             .map_err(|_| JwtError::OpenSSLError)?;
 
         Ok(JwsHs256Signer { kid, skey, digest })
+    }
+
+    pub(crate) fn sign_inner<V: JwsSignable>(
+        &self,
+        jws: &V,
+        sign_data: JwsCompactSign2Data,
+    ) -> Result<V::Signed, JwtError> {
+        let hdr_b64 = serde_json::to_vec(&sign_data.header)
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::InvalidHeaderFormat
+            })
+            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(bytes))?;
+
+        let mut signer = sign::Signer::new(self.digest, &self.skey).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
+
+        signer
+            .update(hdr_b64.as_bytes())
+            .and_then(|_| signer.update(".".as_bytes()))
+            .and_then(|_| signer.update(sign_data.payload_b64.as_bytes()))
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            })?;
+
+        let signature = signer.sign_to_vec().map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
+
+        let jwsc = JwsCompact {
+            header: sign_data.header,
+            hdr_b64,
+            payload_b64: sign_data.payload_b64,
+            signature,
+        };
+
+        jws.post_process(jwsc)
     }
 }
 
@@ -117,40 +162,7 @@ impl JwsSigner for JwsHs256Signer {
         // Let the signer update the header as required.
         self.update_header(&mut sign_data.header)?;
 
-        let hdr_b64 = serde_json::to_vec(&sign_data.header)
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::InvalidHeaderFormat
-            })
-            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(bytes))?;
-
-        let mut signer = sign::Signer::new(self.digest, &self.skey).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-
-        signer
-            .update(hdr_b64.as_bytes())
-            .and_then(|_| signer.update(".".as_bytes()))
-            .and_then(|_| signer.update(sign_data.payload_b64.as_bytes()))
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
-            })?;
-
-        let signature = signer.sign_to_vec().map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-
-        let jwsc = JwsCompact {
-            header: sign_data.header,
-            hdr_b64,
-            payload_b64: sign_data.payload_b64,
-            signature,
-        };
-
-        jws.post_process(jwsc)
+        self.sign_inner(jws, sign_data)
     }
 }
 

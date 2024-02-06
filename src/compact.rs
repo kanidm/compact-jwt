@@ -126,7 +126,8 @@ pub struct ProtectedHeader {
         skip_serializing_if = "Option::is_none"
     )]
     pub(crate) x5t_s256: Option<()>,
-    // Don't allow extra header names?
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) ctx: Option<String>,
 }
 
 /// A Compact JWS that is able to be verified or stringified for transmission
@@ -365,9 +366,6 @@ pub struct JweProtectedHeader {
         skip_serializing_if = "Option::is_none"
     )]
     pub(crate) x5t_s256: Option<()>,
-    // Don't allow extra header names?
-    /// MS custom header that they use for the authentication tag (rather than the
-    /// perfectly good authentication field they have right there ... )
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) ctx: Option<String>,
 }
