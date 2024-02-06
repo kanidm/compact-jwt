@@ -26,6 +26,12 @@ impl JweA256GCMEncipher {
     }
 }
 
+impl JweA256GCMEncipher {
+    pub(crate) fn raw_key(&self) -> [u8; KEY_LEN] {
+        self.aes_key
+    }
+}
+
 impl TryFrom<&[u8]> for JweA256GCMEncipher {
     type Error = JwtError;
 
@@ -38,6 +44,15 @@ impl TryFrom<&[u8]> for JweA256GCMEncipher {
         aes_key.copy_from_slice(r_aes_key);
 
         Ok(JweA256GCMEncipher { aes_key })
+    }
+}
+
+impl From<&[u8; 32]> for JweA256GCMEncipher {
+    fn from(r_aes_key: &[u8; 32]) -> Self {
+        let mut aes_key = [0; KEY_LEN];
+        aes_key.copy_from_slice(r_aes_key);
+
+        JweA256GCMEncipher { aes_key }
     }
 }
 

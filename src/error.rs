@@ -16,6 +16,8 @@ pub enum JwtError {
     InvalidSignature,
     /// Invalid JWT content
     InvalidJwt,
+    /// Invalid PRT content
+    InvalidPRT,
     /// Invalid Critical Extension present
     CriticalExtension,
     /// OpenSSL failure

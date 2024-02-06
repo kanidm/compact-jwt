@@ -366,6 +366,10 @@ pub struct JweProtectedHeader {
     )]
     pub(crate) x5t_s256: Option<()>,
     // Don't allow extra header names?
+    /// MS custom header that they use for the authentication tag (rather than the
+    /// perfectly good authentication field they have right there ... )
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) ctx: Option<String>,
 }
 
 /// A Compact JWE that is able to be deciphered or stringified for transmission
@@ -419,6 +423,9 @@ impl FromStr for JweCompact {
                 JwtError::InvalidBase64
             })
             .and_then(|bytes| {
+                // let hdr_str = String::from_utf8(bytes.to_vec()).unwrap();
+                // trace!(%hdr_str);
+
                 serde_json::from_slice(&bytes).map_err(|e| {
                     debug!(?e, "invalid header format - invalid json");
                     JwtError::InvalidHeaderFormat
