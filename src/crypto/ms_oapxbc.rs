@@ -93,6 +93,7 @@ impl MsOapxbcSessionKey {
 }
 
 impl MsOapxbcSessionKey {
+    /// Given a PRTv2 JWE in compact form, decipher and authenticate its content.
     pub fn decipher_prt_v2(&self, jwec: &JweCompact) -> Result<Jwe, JwtError> {
         let ctx_bytes = if let Some(ctx) = &jwec.header.ctx {
             general_purpose::STANDARD
@@ -182,11 +183,13 @@ impl MsOapxbcSessionKey {
 
         let hmac_key = JwsHs256Signer::try_from(derived_key.as_slice())?;
 
-        let mut signer = MsOapxbcSessionKeyHs256 { nonce, hmac_key };
+        let signer = MsOapxbcSessionKeyHs256 { nonce, hmac_key };
 
         signer.sign(jws)
     }
 
+    /// Verify a JWS has been signed either directly (HS256) or with a derived key if
+    /// the ctx field is present.
     pub fn verify<V: JwsVerifiable>(&self, jwsc: &V) -> Result<V::Verified, JwtError> {
         let hmac_key = if let Some(ctx) = &jwsc.data().header.ctx {
             let ctx_bytes = general_purpose::STANDARD

@@ -19,13 +19,7 @@ pub struct JweA256GCMEncipher {
     aes_key: [u8; KEY_LEN],
 }
 
-#[cfg(test)]
-impl JweA256GCMEncipher {
-    pub(crate) fn assert_key(&self, key: &[u8]) -> bool {
-        self.aes_key == key
-    }
-}
-
+#[cfg(feature = "msextensions")]
 impl JweA256GCMEncipher {
     pub(crate) fn raw_key(&self) -> [u8; KEY_LEN] {
         self.aes_key
@@ -117,10 +111,6 @@ impl JweEncipherInner for JweA256GCMEncipher {
 }
 
 impl JweA256GCMEncipher {
-    pub(crate) fn ms_oapxbc_key(&self) -> &[u8] {
-        &self.aes_key
-    }
-
     pub fn key_len() -> usize {
         KEY_LEN
     }
