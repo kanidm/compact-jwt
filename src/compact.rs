@@ -126,7 +126,8 @@ pub struct ProtectedHeader {
         skip_serializing_if = "Option::is_none"
     )]
     pub(crate) x5t_s256: Option<()>,
-    // Don't allow extra header names?
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) ctx: Option<String>,
 }
 
 /// A Compact JWS that is able to be verified or stringified for transmission
@@ -365,7 +366,8 @@ pub struct JweProtectedHeader {
         skip_serializing_if = "Option::is_none"
     )]
     pub(crate) x5t_s256: Option<()>,
-    // Don't allow extra header names?
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) ctx: Option<String>,
 }
 
 /// A Compact JWE that is able to be deciphered or stringified for transmission
@@ -419,6 +421,9 @@ impl FromStr for JweCompact {
                 JwtError::InvalidBase64
             })
             .and_then(|bytes| {
+                // let hdr_str = String::from_utf8(bytes.to_vec()).unwrap();
+                // trace!(%hdr_str);
+
                 serde_json::from_slice(&bytes).map_err(|e| {
                     debug!(?e, "invalid header format - invalid json");
                     JwtError::InvalidHeaderFormat

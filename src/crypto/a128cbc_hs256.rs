@@ -7,7 +7,7 @@ use openssl::sign::Signer;
 use openssl::symm::{Cipher, Crypter, Mode};
 
 const AES_KEY_LEN: usize = 16;
-const HMAC_KEY_LEN: usize = 16;
+pub const HMAC_KEY_LEN: usize = 16;
 const HMAC_SIG_LEN: usize = 32;
 const HMAC_TRUNC_SIG_LEN: usize = 16;
 
@@ -94,56 +94,64 @@ impl JweA128CBCHS256Decipher {
 
         let cipher = Cipher::aes_128_cbc();
 
-        let block_size = cipher.block_size();
-        // The ciphertext needs pkcs7 padding, so we have to deal with that later.
-        let plaintext_len = jwec.ciphertext.len() + block_size;
-        let mut plaintext = vec![0; plaintext_len];
+        decipher(cipher, &self.aes_cbc_key, &jwec.ciphertext, &jwec.iv)
+    }
+}
 
-        let mut decrypter = Crypter::new(cipher, Mode::Decrypt, &self.aes_cbc_key, Some(&jwec.iv))
-            .map_err(|ossl_err| {
-                debug!(?ossl_err);
-                JwtError::OpenSSLError
-            })?;
+pub(crate) fn decipher(
+    cipher: Cipher,
+    aes_cbc_key: &[u8],
+    ciphertext: &[u8],
+    iv: &[u8],
+) -> Result<Vec<u8>, JwtError> {
+    let block_size = cipher.block_size();
+    let plaintext_len = ciphertext.len() + block_size;
+    let mut plaintext = vec![0; plaintext_len];
 
-        decrypter.pad(true);
+    let mut decrypter =
+        Crypter::new(cipher, Mode::Decrypt, aes_cbc_key, Some(iv)).map_err(|ossl_err| {
+            debug!(?ossl_err);
+            JwtError::OpenSSLError
+        })?;
 
-        let mut count = 0;
+    decrypter.pad(true);
 
-        let mut idx = 0;
-        let mut cipher_boundary = idx + block_size;
-        let mut plaintext_boundary = count + (block_size * 2);
+    let mut count = 0;
 
-        // Only works because of CBC mode - cipher text will be block_size * N, and
-        // plaintext_len will be block_size * (N + 1).
-        //
-        // Unclear if padding is needed?
-        while idx < jwec.ciphertext.len() {
-            let cipher_chunk = &jwec.ciphertext[idx..cipher_boundary];
-            let mut_plaintext_chunk = &mut plaintext[count..plaintext_boundary];
+    let mut idx = 0;
+    let mut cipher_boundary = idx + block_size;
+    let mut plaintext_boundary = count + (block_size * 2);
 
-            count += decrypter
-                .update(cipher_chunk, mut_plaintext_chunk)
-                .map_err(|ossl_err| {
-                    debug!(?ossl_err);
-                    JwtError::OpenSSLError
-                })?;
-
-            idx += block_size;
-            cipher_boundary = idx + block_size;
-            plaintext_boundary = count + (block_size * 2);
-        }
-
+    // Only works because of CBC mode - cipher text will be block_size * N, and
+    // plaintext_len will be block_size * (N + 1).
+    //
+    // Unclear if padding is needed?
+    while idx < ciphertext.len() {
+        let cipher_chunk = &ciphertext[idx..cipher_boundary];
         let mut_plaintext_chunk = &mut plaintext[count..plaintext_boundary];
 
         count += decrypter
-            .finalize(mut_plaintext_chunk)
+            .update(cipher_chunk, mut_plaintext_chunk)
             .map_err(|ossl_err| {
                 debug!(?ossl_err);
                 JwtError::OpenSSLError
             })?;
 
-        plaintext.truncate(count);
-
-        Ok(plaintext)
+        idx += block_size;
+        cipher_boundary = idx + block_size;
+        plaintext_boundary = count + (block_size * 2);
     }
+
+    let mut_plaintext_chunk = &mut plaintext[count..plaintext_boundary];
+
+    count += decrypter
+        .finalize(mut_plaintext_chunk)
+        .map_err(|ossl_err| {
+            debug!(?ossl_err);
+            JwtError::OpenSSLError
+        })?;
+
+    plaintext.truncate(count);
+
+    Ok(plaintext)
 }

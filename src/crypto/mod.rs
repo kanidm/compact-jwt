@@ -11,7 +11,6 @@ mod hs256;
 mod rs256;
 mod x509;
 
-mod ms_oapxbc;
 mod rsaes_oaep;
 
 mod a128cbc_hs256;
@@ -25,6 +24,9 @@ mod ecdhes_a128kw;
 #[cfg(feature = "hsm-crypto")]
 mod tpm;
 
+#[cfg(feature = "msextensions")]
+mod ms_oapxbc;
+
 pub use es256::{JwsEs256Signer, JwsEs256Verifier};
 pub use hs256::JwsHs256Signer;
 pub use rs256::{JwsRs256Signer, JwsRs256Verifier};
@@ -33,8 +35,10 @@ pub use x509::{JwsX509Verifier, JwsX509VerifierBuilder};
 pub use a128kw::JweA128KWEncipher;
 pub use a256kw::JweA256KWEncipher;
 pub use ecdhes_a128kw::{JweEcdhEsA128KWDecipher, JweEcdhEsA128KWEncipher};
-pub use ms_oapxbc::MsOapxbcSessionKey;
 pub use rsaes_oaep::{JweRSAOAEPDecipher, JweRSAOAEPEncipher};
+
+#[cfg(feature = "msextensions")]
+pub use ms_oapxbc::MsOapxbcSessionKey;
 
 #[cfg(feature = "hsm-crypto")]
 pub use tpm::JwsTpmSigner;
