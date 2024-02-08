@@ -19,7 +19,7 @@ pub struct JweA256GCMEncipher {
     aes_key: [u8; KEY_LEN],
 }
 
-#[cfg(feature = "msextensions")]
+#[cfg(all(test, feature = "msextensions"))]
 impl JweA256GCMEncipher {
     pub(crate) fn raw_key(&self) -> [u8; KEY_LEN] {
         self.aes_key

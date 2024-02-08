@@ -13,7 +13,7 @@ license = "MPL-2.0"
 [features]
 unsafe_release_without_verify = []
 hsm-crypto = ["kanidm-hsm-crypto"]
-msextensions = ["dep:openssl-kdf", "openssl", "hsm-crypto"]
+msextensions = ["dep:openssl-kdf", "openssl", "kanidm-hsm-crypto/msextensions"]
 default = ["openssl"]
 
 [package.metadata.docs.rs]
@@ -27,7 +27,8 @@ serde = { version = "^1.0.136", features = ["derive"] }
 serde_json = "^1.0.79"
 base64 = "^0.21.5"
 base64urlsafedata = "0.1.0"
-kanidm-hsm-crypto = { version = "^0.1.4", optional = true }
+# kanidm-hsm-crypto = { version = "^0.1.4", optional = true }
+kanidm-hsm-crypto = { path = "../hsm-crypto", optional = true }
 openssl = { version = "^0.10.38", optional = true }
 openssl-kdf = { version = "0.4.2", optional = true }
 url = { version = "^2.2.2", features = ["serde"] }
