@@ -14,6 +14,8 @@ use base64::{engine::general_purpose, Engine as _};
 /// A JWS signer that creates HMAC SHA256 signatures.
 #[derive(Clone)]
 pub struct JwsHs256Signer {
+    /// If the KID should be embedded during signing
+    sign_option_embed_kid: bool,
     /// The KID of this signer. This is the sha256 digest of the key.
     kid: String,
     /// Private Key
@@ -74,7 +76,12 @@ impl JwsHs256Signer {
             })
             .map_err(|_| JwtError::OpenSSLError)?;
 
-        Ok(JwsHs256Signer { kid, skey, digest })
+        Ok(JwsHs256Signer {
+            kid,
+            skey,
+            digest,
+            sign_option_embed_kid: true,
+        })
     }
 
     pub(crate) fn sign_inner<V: JwsSignable>(
@@ -138,7 +145,12 @@ impl TryFrom<&[u8]> for JwsHs256Signer {
             JwtError::OpenSSLError
         })?;
 
-        Ok(JwsHs256Signer { kid, skey, digest })
+        Ok(JwsHs256Signer {
+            kid,
+            skey,
+            digest,
+            sign_option_embed_kid: true,
+        })
     }
 }
 
@@ -151,7 +163,8 @@ impl JwsSigner for JwsHs256Signer {
         // Update the alg to match.
         header.alg = JwaAlg::HS256;
 
-        header.kid = Some(self.kid.clone());
+        // If the signer is configured to include the KID
+        header.kid = self.sign_option_embed_kid.then(|| self.kid.clone());
 
         Ok(())
     }
@@ -163,6 +176,12 @@ impl JwsSigner for JwsHs256Signer {
         self.update_header(&mut sign_data.header)?;
 
         self.sign_inner(jws, sign_data)
+    }
+    fn set_sign_option_embed_kid(&self, value: bool) -> Self {
+        JwsHs256Signer {
+            sign_option_embed_kid: value,
+            ..self.to_owned()
+        }
     }
 }
 

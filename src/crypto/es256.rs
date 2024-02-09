@@ -19,6 +19,8 @@ use crate::traits::*;
 pub struct JwsEs256Signer {
     /// If the public jwk should be embeded during signing
     sign_option_embed_jwk: bool,
+    /// If the KID should be embedded during singing
+    sign_option_embed_kid: bool,
     /// The KID of this validator
     kid: String,
     /// Private Key
@@ -115,6 +117,7 @@ impl JwsEs256Signer {
             skey,
             digest,
             sign_option_embed_jwk: false,
+            sign_option_embed_kid: true,
         })
     }
 
@@ -146,6 +149,7 @@ impl JwsEs256Signer {
             skey,
             digest,
             sign_option_embed_jwk: false,
+            sign_option_embed_kid: true,
         })
     }
 
@@ -168,6 +172,7 @@ impl JwsEs256Signer {
             skey,
             digest,
             sign_option_embed_jwk: false,
+            sign_option_embed_kid: true,
         })
     }
 
@@ -258,7 +263,8 @@ impl JwsSigner for JwsEs256Signer {
         // Update the alg to match.
         header.alg = JwaAlg::ES256;
 
-        header.kid = Some(self.kid.clone());
+        // If the signer is configured to include the KID
+        header.kid = self.sign_option_embed_kid.then(|| self.kid.clone());
 
         // if were were asked to ember the jwk, do so now.
         if self.sign_option_embed_jwk {
@@ -329,6 +335,13 @@ impl JwsSigner for JwsEs256Signer {
         };
 
         jws.post_process(jwsc)
+    }
+
+    fn set_sign_option_embed_kid(&self, value: bool) -> Self {
+        JwsEs256Signer {
+            sign_option_embed_kid: value,
+            ..self.to_owned()
+        }
     }
 }
 

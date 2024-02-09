@@ -18,6 +18,9 @@ pub trait JwsSigner {
 
     /// Perform the signature operation
     fn sign<V: JwsSignable>(&self, _jws: &V) -> Result<V::Signed, JwtError>;
+
+    /// Enable or disable embedding the KID in the Jws header
+    fn set_sign_option_embed_kid(&self, value: bool) -> Self;
 }
 
 /// A trait defining how a JwsSigner will operate.
