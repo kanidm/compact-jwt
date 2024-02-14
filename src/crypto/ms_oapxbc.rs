@@ -258,6 +258,12 @@ impl JwsSigner for MsOapxbcSessionKeyHs256 {
 
         self.hmac_key.sign_inner(jws, sign_data)
     }
+    fn set_sign_option_embed_kid(&self, value: bool) -> Self {
+        MsOapxbcSessionKeyHs256 {
+            hmac_key: self.hmac_key.set_sign_option_embed_kid(value),
+            nonce: self.nonce,
+        }
+    }
 }
 
 pub(crate) fn nist_sp800_108_kdf_hmac_sha256(
