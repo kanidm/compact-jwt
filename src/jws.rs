@@ -62,6 +62,13 @@ impl JwsBuilder {
         self
     }
 
+    /// Set the content use header
+    #[cfg(feature = "msextensions")]
+    pub fn set_use(mut self, r#use: Option<&str>) -> Self {
+        self.header.r#use = r#use.map(|s| s.to_string());
+        self
+    }
+
     /// Finalise this builder
     pub fn build(self) -> Jws {
         let JwsBuilder { header, payload } = self;
