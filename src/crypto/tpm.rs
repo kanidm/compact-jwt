@@ -70,7 +70,10 @@ where
             _ => {
                 // Only set the kid if it wasn't set previously with JwsBuilder.set_x5c()
                 if let None = header.x5c {
-                    header.kid = Some(self.kid.clone());
+                    // Only set the kid if it's not already set
+                    if header.kid.is_none() {
+                        header.kid = Some(self.kid.clone());
+                    }
                 }
             }
         }

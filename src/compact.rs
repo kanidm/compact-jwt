@@ -128,6 +128,9 @@ pub struct ProtectedHeader {
     pub(crate) x5t_s256: Option<()>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) ctx: Option<String>,
+    #[cfg(feature = "msextensions")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) r#use: Option<String>,
 }
 
 /// A Compact JWS that is able to be verified or stringified for transmission

@@ -46,7 +46,7 @@ impl JwsBuilder {
         self
     }
 
-    #[cfg(test)]
+    /// Set the kid
     pub fn set_kid(mut self, kid: Option<&str>) -> Self {
         self.header.kid = kid.map(|s| s.to_string());
         self
@@ -59,6 +59,13 @@ impl JwsBuilder {
                 .map(|c| general_purpose::STANDARD.encode(c))
                 .collect()
         });
+        self
+    }
+
+    /// Set the content use header
+    #[cfg(feature = "msextensions")]
+    pub fn set_use(mut self, r#use: Option<&str>) -> Self {
+        self.header.r#use = r#use.map(|s| s.to_string());
         self
     }
 
