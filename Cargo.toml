@@ -1,6 +1,6 @@
 [package]
 name = "compact_jwt"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
 authors = ["William Brown <william@blackhats.net.au>"]
 description = "Minimal implementation of JWT for OIDC and other applications"
