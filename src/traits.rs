@@ -1,6 +1,6 @@
 //! Traits that define behaviour of JWS signing and verification types.
 
-use crate::compact::{JweCompact, JweProtectedHeader};
+use crate::compact::{JwaAlg, JweCompact, JweProtectedHeader};
 use crate::compact::{JwsCompact, JwsCompactVerifyData, ProtectedHeader};
 use crate::error::JwtError;
 use crate::jwe::Jwe;
@@ -12,6 +12,10 @@ use crate::jws::{Jws, JwsCompactSign2Data};
 pub trait JwsSigner {
     /// Get the key id from this signer
     fn get_kid(&self) -> &str;
+
+    /// Get the legacy format key id from this signer. This value will be removed
+    /// in a future release.
+    fn get_legacy_kid(&self) -> &str;
 
     /// Update thee content of the header with signer specific data
     fn update_header(&self, header: &mut ProtectedHeader) -> Result<(), JwtError>;
@@ -29,6 +33,10 @@ pub trait JwsSigner {
 pub trait JwsMutSigner {
     /// Get the key id from this signer
     fn get_kid(&mut self) -> &str;
+
+    /// Get the legacy format key id from this signer. This value will be removed
+    /// in a future release.
+    fn get_legacy_kid(&mut self) -> &str;
 
     /// Update thee content of the header with signer specific data
     fn update_header(&mut self, header: &mut ProtectedHeader) -> Result<(), JwtError>;
@@ -53,7 +61,7 @@ pub trait JwsSignerToVerifier {
 /// Note that due to the design of this api, you can NOT define your own verifier.
 pub trait JwsVerifier {
     /// Get the key id from this verifier
-    fn get_kid(&self) -> Option<&str>;
+    fn get_kid(&self) -> &str;
 
     /// Perform the signature verification
     fn verify<V: JwsVerifiable>(&self, _jwsc: &V) -> Result<V::Verified, JwtError>;
@@ -64,7 +72,7 @@ pub trait JwsVerifier {
 /// Note that due to the design of this api, you can NOT define your own verifier.
 pub trait JwsMutVerifier {
     /// Get the key id from this verifier
-    fn get_kid(&mut self) -> Option<&str>;
+    fn get_kid(&mut self) -> &str;
 
     /// Perform the signature verification
     fn verify<V: JwsVerifiable>(&mut self, _jwsc: &V) -> Result<V::Verified, JwtError>;
@@ -77,6 +85,12 @@ pub trait JwsVerifiable {
 
     /// Retrieve the inner data from the JwsCompact that is to be verified
     fn data(&self) -> JwsCompactVerifyData<'_>;
+
+    /// Access the algorithm that was used to sign this JWS
+    fn alg(&self) -> JwaAlg;
+
+    /// Access the optional Key ID that signed this JWS
+    fn kid(&self) -> Option<&str>;
 
     /// After the verification is complete, allow post-processing of the released payload
     fn post_process(&self, value: Jws) -> Result<Self::Verified, JwtError>;

@@ -1,7 +1,6 @@
 //! JWS Signing and Verification Structures
 
 use openssl::{bn, hash, pkey, rsa, sign};
-use std::convert::TryFrom;
 
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -25,6 +24,8 @@ pub struct JwsRs256Signer {
     sign_option_embed_kid: bool,
     /// The KID of this validator
     kid: String,
+    /// The Legacy KID of this validator
+    legacy_kid: String,
     /// Private Key
     skey: rsa::Rsa<pkey::Private>,
     /// The matching digest.
@@ -65,7 +66,7 @@ impl JwsRs256Signer {
     pub fn from_rs256_der(der: &[u8]) -> Result<Self, JwtError> {
         let digest = hash::MessageDigest::sha256();
 
-        let kid = hash::hash(digest, der).map(hex::encode).map_err(|e| {
+        let legacy_kid = hash::hash(digest, der).map(hex::encode).map_err(|e| {
             debug!(?e);
             JwtError::OpenSSLError
         })?;
@@ -75,8 +76,23 @@ impl JwsRs256Signer {
             JwtError::OpenSSLError
         })?;
 
+        let kid = skey
+            .public_key_to_der()
+            .and_then(|der| hash::hash(digest, &der))
+            .map(|hashout| {
+                let mut s = hex::encode(hashout);
+                // 192 bits
+                s.truncate(48);
+                s
+            })
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            })?;
+
         Ok(JwsRs256Signer {
             kid,
+            legacy_kid,
             skey,
             digest,
             sign_option_embed_jwk: false,
@@ -101,6 +117,12 @@ impl JwsRs256Signer {
         skey.check_key().map_err(|_| JwtError::OpenSSLError)?;
 
         let kid = skey
+            .public_key_to_der()
+            .and_then(|der| hash::hash(digest, &der))
+            .map(hex::encode)
+            .map_err(|_| JwtError::OpenSSLError)?;
+
+        let legacy_kid = skey
             .private_key_to_der()
             .and_then(|der| hash::hash(digest, &der))
             .map(hex::encode)
@@ -108,6 +130,7 @@ impl JwsRs256Signer {
 
         Ok(JwsRs256Signer {
             kid,
+            legacy_kid,
             skey,
             digest,
             sign_option_embed_jwk: false,
@@ -152,7 +175,7 @@ impl JwsSignerToVerifier for JwsRs256Signer {
             })
             .map_err(|_| JwtError::OpenSSLError)
             .map(|pkey| JwsRs256Verifier {
-                kid: Some(self.kid.clone()),
+                kid: self.kid.clone(),
                 pkey,
                 digest: self.digest,
             })
@@ -164,12 +187,18 @@ impl JwsSigner for JwsRs256Signer {
         self.kid.as_str()
     }
 
+    fn get_legacy_kid(&self) -> &str {
+        self.legacy_kid.as_str()
+    }
+
     fn update_header(&self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
         // Update the alg to match.
         header.alg = JwaAlg::RS256;
 
         // If the signer is configured to include the KID
-        header.kid = self.sign_option_embed_kid.then(|| self.kid.clone());
+        if header.kid.is_none() {
+            header.kid = self.sign_option_embed_kid.then(|| self.kid.clone());
+        }
 
         // if were were asked to ember the jwk, do so now.
         if self.sign_option_embed_jwk {
@@ -243,7 +272,7 @@ impl JwsSigner for JwsRs256Signer {
 #[derive(Clone)]
 pub struct JwsRs256Verifier {
     /// The KID of this validator
-    kid: Option<String>,
+    kid: String,
     /// Public Key
     pkey: rsa::Rsa<pkey::Public>,
     /// The matching digest.
@@ -302,7 +331,22 @@ impl TryFrom<&Jwk> for JwsRs256Verifier {
                     JwtError::OpenSSLError
                 })?;
 
-                let kid = kid.clone();
+                let kid = if let Some(kid) = kid.clone() {
+                    kid
+                } else {
+                    pkey.public_key_to_der()
+                        .and_then(|der| hash::hash(digest, &der))
+                        .map(|hashout| {
+                            let mut s = hex::encode(hashout);
+                            // 192 bits
+                            s.truncate(48);
+                            s
+                        })
+                        .map_err(|e| {
+                            debug!(?e);
+                            JwtError::OpenSSLError
+                        })?
+                };
 
                 Ok(JwsRs256Verifier { kid, pkey, digest })
             }
@@ -315,8 +359,8 @@ impl TryFrom<&Jwk> for JwsRs256Verifier {
 }
 
 impl JwsVerifier for JwsRs256Verifier {
-    fn get_kid(&self) -> Option<&str> {
-        self.kid.as_deref()
+    fn get_kid(&self) -> &str {
+        &self.kid
     }
 
     fn verify<V: JwsVerifiable>(&self, jwsc: &V) -> Result<V::Verified, JwtError> {

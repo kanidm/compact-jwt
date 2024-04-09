@@ -145,6 +145,21 @@ impl JwsX509VerifierBuilder {
 
         trace!(?out);
 
+        let digest = hash::MessageDigest::sha256();
+
+        let kid = if let Some(kid) = kid {
+            kid
+        } else {
+            leaf.public_key()
+                .and_then(|pkey| pkey.public_key_to_der())
+                .and_then(|der| hash::hash(digest, &der))
+                .map(|hashout| hex::encode(hashout))
+                .map_err(|e| {
+                    debug!(?e);
+                    JwtError::OpenSSLError
+                })?
+        };
+
         out.map(|()| JwsX509Verifier { kid, pkey: leaf })
     }
 }
@@ -156,14 +171,14 @@ impl JwsX509VerifierBuilder {
 /// Jws that you need to validate since this type verifies a single leaf.
 pub struct JwsX509Verifier {
     /// The KID of this validator
-    kid: Option<String>,
+    kid: String,
     /// Public Key
     pkey: x509::X509,
 }
 
 impl JwsVerifier for JwsX509Verifier {
-    fn get_kid(&self) -> Option<&str> {
-        self.kid.as_deref()
+    fn get_kid(&self) -> &str {
+        &self.kid
     }
 
     fn verify<V: JwsVerifiable>(&self, jwsc: &V) -> Result<V::Verified, JwtError> {

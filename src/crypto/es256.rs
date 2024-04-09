@@ -1,7 +1,6 @@
 //! JWS Signing and Verification Structures
 
 use openssl::{bn, ec, ecdsa, hash, nid, pkey};
-use std::convert::TryFrom;
 
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -21,8 +20,13 @@ pub struct JwsEs256Signer {
     sign_option_embed_jwk: bool,
     /// If the KID should be embedded during singing
     sign_option_embed_kid: bool,
+    /// If embedding the KID, use the legacy variant. Only present for transitional
+    /// purposes!
+    sign_option_legacy_kid: bool,
     /// The KID of this validator
     kid: String,
+    /// The legacy KID of this validator
+    legacy_kid: String,
     /// Private Key
     skey: ec::EcKey<pkey::Private>,
     /// The matching digest.
@@ -103,7 +107,7 @@ impl JwsEs256Signer {
 
         skey.check_key().map_err(|_| JwtError::OpenSSLError)?;
 
-        let kid = skey
+        let legacy_kid = skey
             .private_key_to_der()
             .and_then(|der| hash::hash(digest, &der))
             .map(|hashout| hex::encode(hashout))
@@ -112,12 +116,28 @@ impl JwsEs256Signer {
                 JwtError::OpenSSLError
             })?;
 
+        let kid = skey
+            .public_key_to_der()
+            .and_then(|der| hash::hash(digest, &der))
+            .map(|hashout| {
+                let mut s = hex::encode(hashout);
+                // 192 bits
+                s.truncate(48);
+                s
+            })
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            })?;
+
         Ok(JwsEs256Signer {
             kid,
+            legacy_kid,
             skey,
             digest,
             sign_option_embed_jwk: false,
             sign_option_embed_kid: true,
+            sign_option_legacy_kid: false,
         })
     }
 
@@ -138,41 +158,76 @@ impl JwsEs256Signer {
 
         skey.check_key().map_err(|_| JwtError::OpenSSLError)?;
 
-        let kid = skey
+        let legacy_kid = skey
             .private_key_to_der()
             .and_then(|der| hash::hash(digest, &der))
-            .map(hex::encode)
-            .map_err(|_| JwtError::OpenSSLError)?;
+            .map(|hashout| hex::encode(hashout))
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            })?;
+
+        let kid = skey
+            .public_key_to_der()
+            .and_then(|der| hash::hash(digest, &der))
+            .map(|hashout| {
+                let mut s = hex::encode(hashout);
+                // 192 bits
+                s.truncate(48);
+                s
+            })
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            })?;
 
         Ok(JwsEs256Signer {
             kid,
+            legacy_kid,
             skey,
             digest,
             sign_option_embed_jwk: false,
             sign_option_embed_kid: true,
+            sign_option_legacy_kid: false,
         })
     }
 
-    /// Restore this JwsSignerEnum from a DER private key.
+    /// Restore this JwsSigner from a DER private key.
     pub fn from_es256_der(der: &[u8]) -> Result<Self, JwtError> {
         let digest = hash::MessageDigest::sha256();
-
-        let kid = hash::hash(digest, der).map(hex::encode).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
 
         let skey = ec::EcKey::private_key_from_der(der).map_err(|e| {
             debug!(?e);
             JwtError::OpenSSLError
         })?;
 
+        let kid = skey
+            .public_key_to_der()
+            .and_then(|der| hash::hash(digest, &der))
+            .map(|hashout| {
+                let mut s = hex::encode(hashout);
+                // 192 bits
+                s.truncate(48);
+                s
+            })
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            })?;
+
+        let legacy_kid = hash::hash(digest, der).map(hex::encode).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
+
         Ok(JwsEs256Signer {
             kid,
+            legacy_kid,
             skey,
             digest,
             sign_option_embed_jwk: false,
             sign_option_embed_kid: true,
+            sign_option_legacy_kid: false,
         })
     }
 
@@ -188,51 +243,16 @@ impl JwsEs256Signer {
     pub fn public_key_as_jwk(&self) -> Result<Jwk, JwtError> {
         let pkey = self.skey.public_key();
         let ec_group = self.skey.group();
+        public_key_as_jwk(pkey, ec_group, self.kid.clone())
+    }
 
-        let mut bnctx = bn::BigNumContext::new().map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-
-        let mut xbn = bn::BigNum::new().map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-
-        let mut ybn = bn::BigNum::new().map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-
-        pkey.affine_coordinates_gfp(ec_group, &mut xbn, &mut ybn, &mut bnctx)
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
-            })?;
-
-        let mut public_key_x = Vec::with_capacity(32);
-        let mut public_key_y = Vec::with_capacity(32);
-
-        public_key_x.resize(32, 0);
-        public_key_y.resize(32, 0);
-
-        let xbnv = xbn.to_vec();
-        let ybnv = ybn.to_vec();
-
-        let (_pad, x_fill) = public_key_x.split_at_mut(32 - xbnv.len());
-        x_fill.copy_from_slice(&xbnv);
-
-        let (_pad, y_fill) = public_key_y.split_at_mut(32 - ybnv.len());
-        y_fill.copy_from_slice(&ybnv);
-
-        Ok(Jwk::EC {
-            crv: EcCurve::P256,
-            x: Base64UrlSafeData(public_key_x),
-            y: Base64UrlSafeData(public_key_y),
-            alg: Some(JwaAlg::ES256),
-            use_: Some(JwkUse::Sig),
-            kid: Some(self.kid.clone()),
-        })
+    /// Unable use of the legacy KID for transitional purposes. This will be
+    /// removed in a future version!
+    pub fn set_sign_option_legacy_kid(&self, value: bool) -> Self {
+        JwsEs256Signer {
+            sign_option_legacy_kid: value,
+            ..self.to_owned()
+        }
     }
 }
 
@@ -247,7 +267,7 @@ impl JwsSignerToVerifier for JwsEs256Signer {
             })
             .map_err(|_| JwtError::OpenSSLError)
             .map(|pkey| JwsEs256Verifier {
-                kid: Some(self.kid.clone()),
+                kid: self.kid.clone(),
                 pkey,
                 digest: self.digest,
             })
@@ -259,12 +279,22 @@ impl JwsSigner for JwsEs256Signer {
         self.kid.as_str()
     }
 
+    fn get_legacy_kid(&self) -> &str {
+        self.legacy_kid.as_str()
+    }
+
     fn update_header(&self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
         // Update the alg to match.
         header.alg = JwaAlg::ES256;
 
         // If the signer is configured to include the KID
-        header.kid = self.sign_option_embed_kid.then(|| self.kid.clone());
+        if header.kid.is_none() {
+            if self.sign_option_legacy_kid {
+                header.kid = self.sign_option_embed_kid.then(|| self.legacy_kid.clone());
+            } else {
+                header.kid = self.sign_option_embed_kid.then(|| self.kid.clone());
+            }
+        }
 
         // if were were asked to ember the jwk, do so now.
         if self.sign_option_embed_jwk {
@@ -349,7 +379,7 @@ impl JwsSigner for JwsEs256Signer {
 #[derive(Clone)]
 pub struct JwsEs256Verifier {
     /// The KID of this validator
-    kid: Option<String>,
+    kid: String,
     /// Public Key
     pkey: ec::EcKey<pkey::Public>,
     /// The matching digest.
@@ -397,7 +427,22 @@ impl TryFrom<&Jwk> for JwsEs256Verifier {
                     JwtError::OpenSSLError
                 })?;
 
-                let kid = kid.clone();
+                let kid = if let Some(kid) = kid.clone() {
+                    kid
+                } else {
+                    pkey.public_key_to_der()
+                        .and_then(|der| hash::hash(digest, &der))
+                        .map(|hashout| {
+                            let mut s = hex::encode(hashout);
+                            // 192 bits
+                            s.truncate(48);
+                            s
+                        })
+                        .map_err(|e| {
+                            debug!(?e);
+                            JwtError::OpenSSLError
+                        })?
+                };
 
                 Ok(JwsEs256Verifier { kid, pkey, digest })
             }
@@ -409,9 +454,43 @@ impl TryFrom<&Jwk> for JwsEs256Verifier {
     }
 }
 
+impl JwsEs256Verifier {
+    /// Restore this JwsEs256Verifier from a DER public key.
+    pub fn from_es256_der(der: &[u8]) -> Result<Self, JwtError> {
+        let digest = hash::MessageDigest::sha256();
+
+        let pkey = ec::EcKey::public_key_from_der(der).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
+
+        let kid = hash::hash(digest, der).map(hex::encode).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
+
+        Ok(JwsEs256Verifier { kid, pkey, digest })
+    }
+
+    /// Export this verifier's DER public key.
+    pub fn public_key_to_der(&self) -> Result<Vec<u8>, JwtError> {
+        self.pkey.public_key_to_der().map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })
+    }
+
+    /// Get the public Jwk from this signer
+    pub fn public_key_as_jwk(&self) -> Result<Jwk, JwtError> {
+        let pkey = self.pkey.public_key();
+        let ec_group = self.pkey.group();
+        public_key_as_jwk(pkey, ec_group, self.kid.clone())
+    }
+}
+
 impl JwsVerifier for JwsEs256Verifier {
-    fn get_kid(&self) -> Option<&str> {
-        self.kid.as_deref()
+    fn get_kid(&self) -> &str {
+        &self.kid
     }
 
     fn verify<V: JwsVerifiable>(&self, jwsc: &V) -> Result<V::Verified, JwtError> {
@@ -471,6 +550,57 @@ impl JwsVerifier for JwsEs256Verifier {
             Err(JwtError::InvalidSignature)
         }
     }
+}
+
+fn public_key_as_jwk(
+    pkey: &ec::EcPointRef,
+    ec_group: &ec::EcGroupRef,
+    kid: String,
+) -> Result<Jwk, JwtError> {
+    let mut bnctx = bn::BigNumContext::new().map_err(|e| {
+        debug!(?e);
+        JwtError::OpenSSLError
+    })?;
+
+    let mut xbn = bn::BigNum::new().map_err(|e| {
+        debug!(?e);
+        JwtError::OpenSSLError
+    })?;
+
+    let mut ybn = bn::BigNum::new().map_err(|e| {
+        debug!(?e);
+        JwtError::OpenSSLError
+    })?;
+
+    pkey.affine_coordinates_gfp(ec_group, &mut xbn, &mut ybn, &mut bnctx)
+        .map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
+
+    let mut public_key_x = Vec::with_capacity(32);
+    let mut public_key_y = Vec::with_capacity(32);
+
+    public_key_x.resize(32, 0);
+    public_key_y.resize(32, 0);
+
+    let xbnv = xbn.to_vec();
+    let ybnv = ybn.to_vec();
+
+    let (_pad, x_fill) = public_key_x.split_at_mut(32 - xbnv.len());
+    x_fill.copy_from_slice(&xbnv);
+
+    let (_pad, y_fill) = public_key_y.split_at_mut(32 - ybnv.len());
+    y_fill.copy_from_slice(&ybnv);
+
+    Ok(Jwk::EC {
+        crv: EcCurve::P256,
+        x: Base64UrlSafeData(public_key_x),
+        y: Base64UrlSafeData(public_key_y),
+        alg: Some(JwaAlg::ES256),
+        use_: Some(JwkUse::Sig),
+        kid: Some(kid),
+    })
 }
 
 #[cfg(test)]

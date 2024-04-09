@@ -4,7 +4,10 @@ use crate::traits::*;
 use crate::JwtError;
 
 use openssl::aes::{unwrap_key, wrap_key, AesKey};
+use openssl::hash;
 use openssl::rand::rand_bytes;
+
+use std::fmt;
 
 // Do I need some inner type to handle the enc bit?
 
@@ -16,13 +19,32 @@ const KW_EXTRA: usize = 8;
 /// shared keys, or are creating encrypted service tokens.
 #[derive(Clone)]
 pub struct JweA128KWEncipher {
+    /// Mark that the key is ephemeral and shall not be exported.
+    is_ephemeral: bool,
+    /// If the KID should be embedded during signing
+    sign_option_embed_kid: bool,
+    /// The KID of this encryption key. This is a truncated sha256 digest.
+    kid: String,
+    /// The wrapping key.
     wrap_key: [u8; KEY_LEN],
+}
+
+impl fmt::Debug for JweA128KWEncipher {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("JweA128KWEncipher")
+            .field("kid", &self.kid)
+            .finish()
+    }
 }
 
 impl JweEncipherOuter for JweA128KWEncipher {
     /// See [JweEncipherOuter]
     fn set_header_alg(&self, hdr: &mut JweProtectedHeader) -> Result<(), JwtError> {
         hdr.alg = JweAlg::A128KW;
+        if self.sign_option_embed_kid {
+            hdr.kid = Some(self.kid.clone());
+        }
+
         Ok(())
     }
 
@@ -55,8 +77,8 @@ impl JweEncipherOuter for JweA128KWEncipher {
 }
 
 impl JweA128KWEncipher {
-    /// Generate an ephemeral outer key.
-    pub fn generate_ephemeral() -> Result<Self, JwtError> {
+    /// Create a new direct A128KW Encipher. The key will be randomly generated.
+    pub fn new() -> Result<Self, JwtError> {
         let mut wrap_key = [0; KEY_LEN];
 
         rand_bytes(&mut wrap_key).map_err(|ossl_err| {
@@ -64,7 +86,37 @@ impl JweA128KWEncipher {
             JwtError::OpenSSLError
         })?;
 
-        Ok(JweA128KWEncipher { wrap_key })
+        Self::try_from(wrap_key)
+    }
+
+    /// Get the Key ID of this encipher
+    pub fn kid(&self) -> &str {
+        self.kid.as_str()
+    }
+
+    /// If this key is not ephemeral, expose the bytes of the AES wrap key. This
+    /// allows the key to be persisted.
+    pub fn key_bytes(&self) -> Result<[u8; KEY_LEN], JwtError> {
+        if self.is_ephemeral {
+            Err(JwtError::UnableToReleaseKey)
+        } else {
+            Ok(self.wrap_key)
+        }
+    }
+
+    /// Enable or disable setting the KID into the header of any encrypted JWE's
+    pub fn set_sign_option_embed_kid(mut self, value: bool) -> Self {
+        self.sign_option_embed_kid = value;
+        self
+    }
+
+    /// Generate an ephemeral outer key.
+    pub fn generate_ephemeral() -> Result<Self, JwtError> {
+        Self::new().map(|mut key| {
+            key.is_ephemeral = true;
+            key.sign_option_embed_kid = false;
+            key
+        })
     }
 
     /// Given a JWE, encipher its content to a compact form.
@@ -105,18 +157,45 @@ impl JweA128KWEncipher {
             payload,
         })
     }
-}
 
-impl From<[u8; KEY_LEN]> for JweA128KWEncipher {
-    fn from(wrap_key: [u8; KEY_LEN]) -> JweA128KWEncipher {
-        JweA128KWEncipher { wrap_key }
+    pub(crate) fn load_ephemeral(wrap_key: [u8; KEY_LEN]) -> Self {
+        JweA128KWEncipher {
+            is_ephemeral: true,
+            sign_option_embed_kid: false,
+            kid: String::default(),
+            wrap_key,
+        }
     }
 }
 
-impl TryFrom<Vec<u8>> for JweA128KWEncipher {
+impl TryFrom<[u8; KEY_LEN]> for JweA128KWEncipher {
     type Error = JwtError;
 
-    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+    fn try_from(wrap_key: [u8; KEY_LEN]) -> Result<Self, Self::Error> {
+        let digest = hash::MessageDigest::sha256();
+
+        let kid = hash::hash(digest, &wrap_key)
+            .map(|hashout| {
+                let mut s = hex::encode(hashout);
+                // 192 bits
+                s.truncate(48);
+                s
+            })
+            .map_err(|_| JwtError::OpenSSLError)?;
+
+        Ok(JweA128KWEncipher {
+            is_ephemeral: false,
+            sign_option_embed_kid: true,
+            kid,
+            wrap_key,
+        })
+    }
+}
+
+impl TryFrom<&[u8]> for JweA128KWEncipher {
+    type Error = JwtError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value.len() != KEY_LEN {
             // Wrong key size.
             return Err(JwtError::InvalidKey);
@@ -126,7 +205,7 @@ impl TryFrom<Vec<u8>> for JweA128KWEncipher {
 
         wrap_key.copy_from_slice(&value);
 
-        Ok(JweA128KWEncipher { wrap_key })
+        Self::try_from(wrap_key)
     }
 }
 
@@ -181,7 +260,7 @@ mod tests {
         assert!(jwec.get_jwk_pubkey().is_none());
 
         let a128kw_encipher =
-            JweA128KWEncipher::try_from(a128kw_key).expect("Unable to create encipher");
+            JweA128KWEncipher::try_from(a128kw_key.as_slice()).expect("Unable to create encipher");
 
         let released = a128kw_encipher
             .decipher(&jwec)

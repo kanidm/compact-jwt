@@ -14,6 +14,7 @@ pub(crate) const KEY_LEN: usize = 32;
 const IV_LEN: usize = 12;
 const AUTH_TAG_LEN: usize = 16;
 
+/// A JWE inner encipher and decipher for AES 256 GCM.
 #[derive(Clone)]
 pub struct JweA256GCMEncipher {
     aes_key: [u8; KEY_LEN],
@@ -111,11 +112,12 @@ impl JweEncipherInner for JweA256GCMEncipher {
 }
 
 impl JweA256GCMEncipher {
+    /// The required length for this cipher key
     pub fn key_len() -> usize {
         KEY_LEN
     }
 
-    pub fn decipher_inner(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
+    pub(crate) fn decipher_inner(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
         super::a128gcm::aes_gcm_decipher(
             Cipher::aes_256_gcm(),
             &jwec.ciphertext,

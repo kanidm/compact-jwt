@@ -16,7 +16,7 @@ use base64::{engine::general_purpose, Engine as _};
 pub struct JwsHs256Signer {
     /// If the KID should be embedded during signing
     sign_option_embed_kid: bool,
-    /// The KID of this signer. This is the sha256 digest of the key.
+    /// The KID of this signer. This is a truncated sha256 digest.
     kid: String,
     /// Private Key
     skey: pkey::PKey<pkey::Private>,
@@ -63,16 +63,12 @@ impl JwsHs256Signer {
             JwtError::OpenSSLError
         })?;
 
-        let mut kid = [0; 32];
-        rand::rand_bytes(&mut kid).map_err(|e| {
-            error!("{:?}", e);
-            JwtError::OpenSSLError
-        })?;
-
-        let kid = hash::hash(digest, &kid)
-            .map(|out| {
-                let half = out.len() / 2;
-                hex::encode(out.split_at(half).0)
+        let kid = hash::hash(digest, &buf)
+            .map(|hashout| {
+                let mut s = hex::encode(hashout);
+                // 192 bits
+                s.truncate(48);
+                s
             })
             .map_err(|_| JwtError::OpenSSLError)?;
 
@@ -137,7 +133,12 @@ impl TryFrom<&[u8]> for JwsHs256Signer {
         let digest = hash::MessageDigest::sha256();
 
         let kid = hash::hash(digest, buf)
-            .map(hex::encode)
+            .map(|hashout| {
+                let mut s = hex::encode(hashout);
+                // 192 bits
+                s.truncate(48);
+                s
+            })
             .map_err(|_| JwtError::OpenSSLError)?;
 
         let skey = pkey::PKey::hmac(buf).map_err(|e| {
@@ -159,12 +160,18 @@ impl JwsSigner for JwsHs256Signer {
         self.kid.as_str()
     }
 
+    fn get_legacy_kid(&self) -> &str {
+        self.kid.as_str()
+    }
+
     fn update_header(&self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
         // Update the alg to match.
         header.alg = JwaAlg::HS256;
 
         // If the signer is configured to include the KID
-        header.kid = self.sign_option_embed_kid.then(|| self.kid.clone());
+        if header.kid.is_none() {
+            header.kid = self.sign_option_embed_kid.then(|| self.kid.clone());
+        }
 
         Ok(())
     }
@@ -186,8 +193,8 @@ impl JwsSigner for JwsHs256Signer {
 }
 
 impl JwsVerifier for JwsHs256Signer {
-    fn get_kid(&self) -> Option<&str> {
-        Some(self.kid.as_str())
+    fn get_kid(&self) -> &str {
+        self.kid.as_str()
     }
 
     fn verify<V: JwsVerifiable>(&self, jwsc: &V) -> Result<V::Verified, JwtError> {

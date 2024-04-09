@@ -91,7 +91,7 @@ impl JweEncipherOuter for JweEcdhEsA128KWEncipher {
 
         derive_key(&self.priv_key, &self.peer_public_key).and_then(|wrapping_key|
                 // use A128KW with the derived wrap key as usual.
-                JweA128KWEncipher::from(wrapping_key)
+                JweA128KWEncipher::load_ephemeral(wrapping_key)
                     .wrap_key(key_to_wrap))
     }
 }
@@ -228,10 +228,10 @@ impl JweEcdhEsA128KWDecipher {
             }
         };
 
-        derive_key(&self.priv_key, &ephemeral_public_key).and_then(|wrapping_key|
-                // use A128KW with the derived wrap key as usual.
-                JweA128KWEncipher::from(wrapping_key)
-                    .decipher(jwec))
+        derive_key(&self.priv_key, &ephemeral_public_key).and_then(|wrapping_key| {
+            // use A128KW with the derived wrap key as usual.
+            JweA128KWEncipher::load_ephemeral(wrapping_key).decipher(jwec)
+        })
     }
 }
 

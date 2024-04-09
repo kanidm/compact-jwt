@@ -152,11 +152,6 @@ impl fmt::Debug for JwsCompact {
 }
 
 impl JwsCompact {
-    /// Get the KID used to sign this Jws if present
-    pub fn get_jwk_kid(&self) -> Option<&str> {
-        self.header.kid.as_deref()
-    }
-
     /// Get the embedded Url for the Jwk that signed this Jws.
     ///
     /// You MUST ensure this url uses HTTPS and you MUST ensure that your
@@ -259,6 +254,14 @@ impl JwsVerifiable for JwsCompact {
             payload_bytes: self.payload_b64.as_bytes(),
             signature_bytes: self.signature.as_slice(),
         }
+    }
+
+    fn alg(&self) -> JwaAlg {
+        self.header.alg
+    }
+
+    fn kid(&self) -> Option<&str> {
+        self.header.kid.as_deref()
     }
 
     fn post_process(&self, value: Jws) -> Result<Self::Verified, JwtError> {
@@ -384,9 +387,18 @@ pub struct JweCompact {
     pub(crate) authentication_tag: Vec<u8>,
 }
 
+impl fmt::Debug for JweCompact {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("JweCompact")
+            .field("header", &self.header)
+            .field("encrypted_payload_length", &self.ciphertext.len())
+            .finish()
+    }
+}
+
 impl JweCompact {
     /// Get the KID used to encipher this Jwe if present
-    pub fn get_jwk_kid(&self) -> Option<&str> {
+    pub fn kid(&self) -> Option<&str> {
         self.header.kid.as_deref()
     }
 
@@ -401,6 +413,11 @@ impl JweCompact {
     /// Get the embedded public key used to encipher this Jwe, if present.
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
         self.header.jwk.as_ref()
+    }
+
+    /// Return the CEK Algorithm and the inner encryption type.
+    pub fn get_alg_enc(&self) -> (JweAlg, JweEnc) {
+        (self.header.alg, self.header.enc)
     }
 }
 

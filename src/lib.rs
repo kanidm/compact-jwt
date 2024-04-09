@@ -118,7 +118,7 @@ pub mod oidc;
 #[cfg(feature = "openssl")]
 pub use crate::crypto::{JwsEs256Signer, JwsEs256Verifier, JwsHs256Signer};
 
-pub use crate::compact::{JwaAlg, Jwk, JwkKeySet, JwkUse, JwsCompact};
+pub use crate::compact::{JwaAlg, JweCompact, Jwk, JwkKeySet, JwkUse, JwsCompact};
 pub use crate::error::JwtError;
 pub use crate::jws::{Jws, JwsSigned};
 pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};

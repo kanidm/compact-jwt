@@ -40,6 +40,10 @@ where
         self.kid.as_str()
     }
 
+    fn get_legacy_kid(&mut self) -> &str {
+        self.kid.as_str()
+    }
+
     fn update_header(&mut self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
         // Update the alg to match.
         match self.id_key.alg() {
@@ -127,8 +131,8 @@ where
     T: Tpm,
 {
     /// Get the key id from this verifier
-    fn get_kid(&mut self) -> Option<&str> {
-        Some(JwsMutSigner::get_kid(self))
+    fn get_kid(&mut self) -> &str {
+        JwsMutSigner::get_kid(self)
     }
 
     /// Perform the signature verification

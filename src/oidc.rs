@@ -1,6 +1,6 @@
 //! Oidc token implementation
 
-use crate::compact::{Jwk, JwsCompact, JwsCompactVerifyData};
+use crate::compact::{JwaAlg, Jwk, JwsCompact, JwsCompactVerifyData};
 use crate::jws::{Jws, JwsCompactSign2Data, JwsSigned};
 
 use crate::traits::{JwsSignable, JwsVerifiable};
@@ -144,11 +144,6 @@ impl OidcUnverified {
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
         self.jwsc.get_jwk_pubkey()
     }
-
-    /// Get the KID used to sign this Jws if present
-    pub fn get_jwk_kid(&self) -> Option<&str> {
-        self.jwsc.get_jwk_kid()
-    }
 }
 
 impl FromStr for OidcUnverified {
@@ -164,6 +159,14 @@ impl JwsVerifiable for OidcUnverified {
 
     fn data(&self) -> JwsCompactVerifyData<'_> {
         self.jwsc.data()
+    }
+
+    fn alg(&self) -> JwaAlg {
+        self.jwsc.alg()
+    }
+
+    fn kid(&self) -> Option<&str> {
+        self.jwsc.kid()
     }
 
     fn post_process(&self, value: Jws) -> Result<Self::Verified, JwtError> {

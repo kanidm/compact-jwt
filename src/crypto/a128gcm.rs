@@ -13,6 +13,8 @@ pub(crate) const KEY_LEN: usize = 16;
 const IV_LEN: usize = 12;
 const AUTH_TAG_LEN: usize = 16;
 
+/// A JWE inner encipher and decipher for AES 128 GCM. This is the recommended inner
+/// encryption algorithm to use.
 #[derive(Clone)]
 pub struct JweA128GCMEncipher {
     aes_key: [u8; KEY_LEN],
@@ -93,11 +95,12 @@ impl JweEncipherInner for JweA128GCMEncipher {
 }
 
 impl JweA128GCMEncipher {
+    /// The required length for this cipher key
     pub fn key_len() -> usize {
-        16
+        KEY_LEN
     }
 
-    pub fn decipher_inner(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
+    pub(crate) fn decipher_inner(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
         aes_gcm_decipher(
             Cipher::aes_128_gcm(),
             &jwec.ciphertext,
