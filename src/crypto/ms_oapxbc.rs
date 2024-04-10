@@ -330,6 +330,10 @@ impl JwsSigner for MsOapxbcSessionKeyHs256 {
         JwsSigner::get_kid(&self.hmac_key)
     }
 
+    fn get_legacy_kid(&self) -> &str {
+        JwsSigner::get_kid(&self.hmac_key)
+    }
+
     fn update_header(&self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
         let ctx = general_purpose::STANDARD.encode(self.nonce);
         header.ctx = Some(ctx);
