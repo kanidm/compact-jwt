@@ -202,7 +202,7 @@ impl TryFrom<&[u8]> for JweA128KWEncipher {
 
         let mut wrap_key = [0; KEY_LEN];
 
-        wrap_key.copy_from_slice(&value);
+        wrap_key.copy_from_slice(value);
 
         Self::try_from(wrap_key)
     }

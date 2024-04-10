@@ -5,8 +5,8 @@ use openssl::{bn, ec, ecdsa, hash, nid, pkey};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use crate::KID_LEN;
 use crate::error::JwtError;
+use crate::KID_LEN;
 
 use base64::{engine::general_purpose, Engine as _};
 use base64urlsafedata::Base64UrlSafeData;
