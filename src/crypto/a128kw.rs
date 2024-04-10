@@ -1,7 +1,7 @@
 use crate::compact::{JweAlg, JweCompact, JweProtectedHeader};
 use crate::jwe::Jwe;
 use crate::traits::*;
-use crate::JwtError;
+use crate::{JwtError, KID_LEN};
 
 use openssl::aes::{unwrap_key, wrap_key, AesKey};
 use openssl::hash;
@@ -177,8 +177,7 @@ impl TryFrom<[u8; KEY_LEN]> for JweA128KWEncipher {
         let kid = hash::hash(digest, &wrap_key)
             .map(|hashout| {
                 let mut s = hex::encode(hashout);
-                // 192 bits
-                s.truncate(48);
+                s.truncate(KID_LEN);
                 s
             })
             .map_err(|_| JwtError::OpenSSLError)?;

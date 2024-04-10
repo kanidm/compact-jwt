@@ -5,6 +5,7 @@ use openssl::{bn, hash, pkey, rsa, sign};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
+use crate::KID_LEN;
 use crate::error::JwtError;
 use base64::{engine::general_purpose, Engine as _};
 use base64urlsafedata::Base64UrlSafeData;
@@ -81,8 +82,7 @@ impl JwsRs256Signer {
             .and_then(|der| hash::hash(digest, &der))
             .map(|hashout| {
                 let mut s = hex::encode(hashout);
-                // 192 bits
-                s.truncate(48);
+                s.truncate(KID_LEN);
                 s
             })
             .map_err(|e| {
@@ -338,8 +338,7 @@ impl TryFrom<&Jwk> for JwsRs256Verifier {
                         .and_then(|der| hash::hash(digest, &der))
                         .map(|hashout| {
                             let mut s = hex::encode(hashout);
-                            // 192 bits
-                            s.truncate(48);
+                            s.truncate(KID_LEN);
                             s
                         })
                         .map_err(|e| {

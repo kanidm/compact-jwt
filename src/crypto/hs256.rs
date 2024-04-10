@@ -1,6 +1,7 @@
 //! JWS Signing and Verification Structures
 
 use crate::error::JwtError;
+use crate::KID_LEN;
 use openssl::{hash, pkey, rand, sign};
 
 use std::fmt;
@@ -66,8 +67,7 @@ impl JwsHs256Signer {
         let kid = hash::hash(digest, &buf)
             .map(|hashout| {
                 let mut s = hex::encode(hashout);
-                // 192 bits
-                s.truncate(48);
+                s.truncate(KID_LEN);
                 s
             })
             .map_err(|_| JwtError::OpenSSLError)?;
@@ -135,8 +135,7 @@ impl TryFrom<&[u8]> for JwsHs256Signer {
         let kid = hash::hash(digest, buf)
             .map(|hashout| {
                 let mut s = hex::encode(hashout);
-                // 192 bits
-                s.truncate(48);
+                s.truncate(KID_LEN);
                 s
             })
             .map_err(|_| JwtError::OpenSSLError)?;

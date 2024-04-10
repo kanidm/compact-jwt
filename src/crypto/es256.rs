@@ -5,6 +5,7 @@ use openssl::{bn, ec, ecdsa, hash, nid, pkey};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
+use crate::KID_LEN;
 use crate::error::JwtError;
 
 use base64::{engine::general_purpose, Engine as _};
@@ -110,7 +111,7 @@ impl JwsEs256Signer {
         let legacy_kid = skey
             .private_key_to_der()
             .and_then(|der| hash::hash(digest, &der))
-            .map(|hashout| hex::encode(hashout))
+            .map(hex::encode)
             .map_err(|e| {
                 debug!(?e);
                 JwtError::OpenSSLError
@@ -121,8 +122,7 @@ impl JwsEs256Signer {
             .and_then(|der| hash::hash(digest, &der))
             .map(|hashout| {
                 let mut s = hex::encode(hashout);
-                // 192 bits
-                s.truncate(48);
+                s.truncate(KID_LEN);
                 s
             })
             .map_err(|e| {
@@ -161,7 +161,7 @@ impl JwsEs256Signer {
         let legacy_kid = skey
             .private_key_to_der()
             .and_then(|der| hash::hash(digest, &der))
-            .map(|hashout| hex::encode(hashout))
+            .map(hex::encode)
             .map_err(|e| {
                 debug!(?e);
                 JwtError::OpenSSLError
@@ -172,8 +172,7 @@ impl JwsEs256Signer {
             .and_then(|der| hash::hash(digest, &der))
             .map(|hashout| {
                 let mut s = hex::encode(hashout);
-                // 192 bits
-                s.truncate(48);
+                s.truncate(KID_LEN);
                 s
             })
             .map_err(|e| {
@@ -246,7 +245,7 @@ impl JwsEs256Signer {
         public_key_as_jwk(pkey, ec_group, self.kid.clone())
     }
 
-    /// Unable use of the legacy KID for transitional purposes. This will be
+    /// Enable use of the legacy KID for transitional purposes. This will be
     /// removed in a future version!
     pub fn set_sign_option_legacy_kid(&self, value: bool) -> Self {
         JwsEs256Signer {

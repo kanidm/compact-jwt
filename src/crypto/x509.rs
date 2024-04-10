@@ -153,7 +153,7 @@ impl JwsX509VerifierBuilder {
             leaf.public_key()
                 .and_then(|pkey| pkey.public_key_to_der())
                 .and_then(|der| hash::hash(digest, &der))
-                .map(|hashout| hex::encode(hashout))
+                .map(hex::encode)
                 .map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError

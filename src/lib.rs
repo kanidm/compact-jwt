@@ -126,6 +126,8 @@ pub use crate::oidc::{OidcClaims, OidcSigned, OidcSubject, OidcToken, OidcUnveri
 
 pub use crate::traits::{JwsSigner, JwsSignerToVerifier, JwsVerifier};
 
+const KID_LEN: usize = 32;
+
 pub(crate) fn btreemap_empty(
     m: &std::collections::BTreeMap<String, serde_json::value::Value>,
 ) -> bool {
