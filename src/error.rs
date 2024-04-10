@@ -50,6 +50,8 @@ pub enum JwtError {
     CipherUnavailable,
     /// The JWE algorithm does not match this decipher.
     AlgorithmUnavailable,
+    /// The request to release the key is unable to be satisfied.
+    UnableToReleaseKey,
 }
 
 impl fmt::Display for JwtError {

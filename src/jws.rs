@@ -28,6 +28,14 @@ impl From<Vec<u8>> for JwsBuilder {
 }
 
 impl JwsBuilder {
+    /// Create a new builder from a serialisable type
+    pub fn into_json<T: Serialize>(value: &T) -> Result<Self, serde_json::Error> {
+        serde_json::to_vec(value).map(|payload| JwsBuilder {
+            header: ProtectedHeader::default(),
+            payload,
+        })
+    }
+
     /// Set the content type of this JWS
     pub fn set_typ(mut self, typ: Option<&str>) -> Self {
         self.header.typ = typ.map(|s| s.to_string());
@@ -46,7 +54,7 @@ impl JwsBuilder {
         self
     }
 
-    /// Set the kid
+    #[cfg(test)]
     pub fn set_kid(mut self, kid: Option<&str>) -> Self {
         self.header.kid = kid.map(|s| s.to_string());
         self

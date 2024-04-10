@@ -10,8 +10,9 @@ use crate::traits::{JwsVerifiable, JwsVerifier};
 pub struct JwsDangerReleaseWithoutVerify {}
 
 impl JwsVerifier for JwsDangerReleaseWithoutVerify {
-    fn get_kid(&self) -> Option<&str> {
-        None
+    /// Get the key id from this verifier
+    fn get_kid(&self) -> &str {
+        "JwsDangerReleaseWithoutVerify"
     }
 
     fn verify<V: JwsVerifiable>(&self, jwsc: &V) -> Result<V::Verified, JwtError> {

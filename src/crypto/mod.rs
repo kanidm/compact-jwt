@@ -32,7 +32,9 @@ pub use hs256::JwsHs256Signer;
 pub use rs256::{JwsRs256Signer, JwsRs256Verifier};
 pub use x509::{JwsX509Verifier, JwsX509VerifierBuilder};
 
+pub use a128gcm::JweA128GCMEncipher;
 pub use a128kw::JweA128KWEncipher;
+pub use a256gcm::JweA256GCMEncipher;
 pub use a256kw::JweA256KWEncipher;
 pub use ecdhes_a128kw::{JweEcdhEsA128KWDecipher, JweEcdhEsA128KWEncipher};
 pub use rsaes_oaep::{JweRSAOAEPDecipher, JweRSAOAEPEncipher};
