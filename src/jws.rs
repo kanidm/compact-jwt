@@ -54,7 +54,7 @@ impl JwsBuilder {
         self
     }
 
-    #[cfg(test)]
+    /// Set the kid (required for Windows Hello/MS Extensions)
     pub fn set_kid(mut self, kid: Option<&str>) -> Self {
         self.header.kid = kid.map(|s| s.to_string());
         self
