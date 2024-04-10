@@ -22,4 +22,5 @@ jobs:
     - name: Cargo test
       run: cargo test
 
-
+    - name: Cargo test with MS Extensions
+      run: cargo test --features msextensions
