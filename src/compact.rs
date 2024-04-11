@@ -244,6 +244,45 @@ impl fmt::Display for JwsCompact {
     }
 }
 
+impl Serialize for JwsCompact {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let self_str = self.to_string();
+        serializer.serialize_str(&self_str)
+    }
+}
+
+struct JwsCompactVisitor;
+
+impl<'de> serde::de::Visitor<'de> for JwsCompactVisitor {
+    type Value = JwsCompact;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a compact JWS which consists of three base64 url safe unpadded strings separated with '.'")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        JwsCompact::from_str(v)
+            .map_err(|_|
+                serde::de::Error::invalid_value(serde::de::Unexpected::Str(v), &self)
+            )
+    }
+}
+
+impl<'de> Deserialize<'de> for JwsCompact {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_str(JwsCompactVisitor)
+    }
+}
+
 impl JwsVerifiable for JwsCompact {
     type Verified = Jws;
 
