@@ -8,7 +8,6 @@ use std::hash::{Hash, Hasher};
 use crate::error::JwtError;
 use crate::KID_LEN;
 use base64::{engine::general_purpose, Engine as _};
-use base64urlsafedata::Base64UrlSafeData;
 
 use crate::compact::{JwaAlg, Jwk, JwkUse, JwsCompact, ProtectedHeader};
 use crate::traits::*;
@@ -151,8 +150,8 @@ impl JwsRs256Signer {
         })?;
 
         Ok(Jwk::RSA {
-            n: Base64UrlSafeData(public_key_n),
-            e: Base64UrlSafeData(public_key_e),
+            n: public_key_n.into(),
+            e: public_key_e.into(),
             alg: Some(JwaAlg::RS256),
             use_: Some(JwkUse::Sig),
             kid: Some(self.kid.clone()),
@@ -317,11 +316,11 @@ impl TryFrom<&Jwk> for JwsRs256Verifier {
             } => {
                 let digest = hash::MessageDigest::sha256();
 
-                let nbn = bn::BigNum::from_slice(&n.0).map_err(|e| {
+                let nbn = bn::BigNum::from_slice(&n).map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError
                 })?;
-                let ebn = bn::BigNum::from_slice(&e.0).map_err(|e| {
+                let ebn = bn::BigNum::from_slice(&e).map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError
                 })?;
