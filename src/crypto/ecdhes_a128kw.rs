@@ -5,8 +5,6 @@ use crate::JwtError;
 
 use super::a128kw::{self, JweA128KWEncipher};
 
-use base64urlsafedata::Base64UrlSafeData;
-
 use openssl::bn;
 use openssl::ec::{EcGroup, EcKey};
 use openssl::nid::Nid;
@@ -69,8 +67,8 @@ impl JweEncipherOuter for JweEcdhEsA128KWEncipher {
 
         hdr.epk = Some(Jwk::EC {
             crv: EcCurve::P256,
-            x: Base64UrlSafeData(public_key_x),
-            y: Base64UrlSafeData(public_key_y),
+            x: public_key_x.into(),
+            y: public_key_y.into(),
             alg: None,
             use_: None,
             kid: None,
@@ -197,11 +195,11 @@ impl JweEcdhEsA128KWDecipher {
                     JwtError::OpenSSLError
                 })?;
 
-                let xbn = bn::BigNum::from_slice(&x.0).map_err(|e| {
+                let xbn = bn::BigNum::from_slice(&x).map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError
                 })?;
-                let ybn = bn::BigNum::from_slice(&y.0).map_err(|e| {
+                let ybn = bn::BigNum::from_slice(&y).map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError
                 })?;

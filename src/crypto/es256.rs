@@ -9,7 +9,6 @@ use crate::error::JwtError;
 use crate::KID_LEN;
 
 use base64::{engine::general_purpose, Engine as _};
-use base64urlsafedata::Base64UrlSafeData;
 
 use crate::compact::{EcCurve, JwaAlg, Jwk, JwkUse, JwsCompact, ProtectedHeader};
 use crate::traits::*;
@@ -405,11 +404,11 @@ impl TryFrom<&Jwk> for JwsEs256Verifier {
                     JwtError::OpenSSLError
                 })?;
 
-                let xbn = bn::BigNum::from_slice(&x.0).map_err(|e| {
+                let xbn = bn::BigNum::from_slice(&x).map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError
                 })?;
-                let ybn = bn::BigNum::from_slice(&y.0).map_err(|e| {
+                let ybn = bn::BigNum::from_slice(&y).map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError
                 })?;
@@ -592,8 +591,8 @@ fn public_key_as_jwk(
 
     Ok(Jwk::EC {
         crv: EcCurve::P256,
-        x: Base64UrlSafeData(public_key_x),
-        y: Base64UrlSafeData(public_key_y),
+        x: public_key_x.into(),
+        y: public_key_y.into(),
         alg: Some(JwaAlg::ES256),
         use_: Some(JwkUse::Sig),
         kid: Some(kid),

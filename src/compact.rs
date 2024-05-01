@@ -268,9 +268,7 @@ impl<'de> serde::de::Visitor<'de> for JwsCompactVisitor {
         E: serde::de::Error,
     {
         JwsCompact::from_str(v)
-            .map_err(|_|
-                serde::de::Error::invalid_value(serde::de::Unexpected::Str(v), &self)
-            )
+            .map_err(|_| serde::de::Error::invalid_value(serde::de::Unexpected::Str(v), &self))
     }
 }
 
