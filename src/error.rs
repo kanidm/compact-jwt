@@ -52,6 +52,8 @@ pub enum JwtError {
     AlgorithmUnavailable,
     /// The request to release the key is unable to be satisfied.
     UnableToReleaseKey,
+    /// Serialisation / Deserialisation error
+    Serde,
 }
 
 impl fmt::Display for JwtError {

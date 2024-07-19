@@ -176,6 +176,26 @@ pub struct JwsX509Verifier {
     pkey: x509::X509,
 }
 
+impl JwsX509Verifier {
+    /// Create a new Jws Verifier directly from an x509 certificate. Note that this bypasses
+    /// any verification of the trust chain in the x5c attribute. If possible, you should use
+    /// [JwsX509VerifierBuilder] instead.
+    pub fn from_x509(pkey: x509::X509) -> Result<Self, JwtError> {
+        let digest = hash::MessageDigest::sha256();
+        let kid = pkey
+            .public_key()
+            .and_then(|pkey| pkey.public_key_to_der())
+            .and_then(|der| hash::hash(digest, &der))
+            .map(hex::encode)
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            })?;
+
+        Ok(JwsX509Verifier { kid, pkey })
+    }
+}
+
 impl JwsVerifier for JwsX509Verifier {
     fn get_kid(&self) -> &str {
         &self.kid
