@@ -107,6 +107,32 @@ impl MsOapxbcSessionKey {
         })
     }
 
+    /// Given an encrypted TGT key, decipher it and return a new LoadableMsOapxbcSessionKey
+    pub fn decipher_tgt_client_key<T>(
+        &self,
+        tpm: &mut T,
+        msrsa_key: &MsOapxbcRsaKey,
+        encrypted_client_key: &[u8],
+    ) -> Result<LoadableMsOapxbcSessionKey, JwtError>
+    where
+        T: Tpm,
+    {
+        match &self {
+            MsOapxbcSessionKey::A256GCM {
+                loadable_session_key,
+            } => tpm
+                .msoapxbc_rsa_decipher_tgt_session_key(
+                    msrsa_key,
+                    loadable_session_key,
+                    encrypted_client_key,
+                )
+                .map_err(|tpm_err| {
+                    error!(?tpm_err);
+                    JwtError::TpmError
+                }),
+        }
+    }
+
     /// Given a JWE in compact form, decipher and authenticate its content.
     pub fn decipher<T>(
         &self,
