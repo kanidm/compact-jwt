@@ -316,11 +316,11 @@ impl TryFrom<&Jwk> for JwsRs256Verifier {
             } => {
                 let digest = hash::MessageDigest::sha256();
 
-                let nbn = bn::BigNum::from_slice(&n).map_err(|e| {
+                let nbn = bn::BigNum::from_slice(n).map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError
                 })?;
-                let ebn = bn::BigNum::from_slice(&e).map_err(|e| {
+                let ebn = bn::BigNum::from_slice(e).map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError
                 })?;

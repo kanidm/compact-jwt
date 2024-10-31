@@ -195,11 +195,11 @@ impl JweEcdhEsA128KWDecipher {
                     JwtError::OpenSSLError
                 })?;
 
-                let xbn = bn::BigNum::from_slice(&x).map_err(|e| {
+                let xbn = bn::BigNum::from_slice(x).map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError
                 })?;
-                let ybn = bn::BigNum::from_slice(&y).map_err(|e| {
+                let ybn = bn::BigNum::from_slice(y).map_err(|e| {
                     debug!(?e);
                     JwtError::OpenSSLError
                 })?;
