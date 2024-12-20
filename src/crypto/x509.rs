@@ -23,6 +23,7 @@ impl JwsX509VerifierBuilder {
     }
 
     #[cfg(test)]
+    /// Test only function
     pub fn set_kid(mut self, kid: Option<&str>) -> Self {
         self.kid = kid.map(|s| s.to_string());
         self
