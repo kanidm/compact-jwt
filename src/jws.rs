@@ -49,6 +49,7 @@ impl JwsBuilder {
     }
 
     #[cfg(test)]
+    /// Test only function
     pub fn set_alg(mut self, alg: crate::compact::JwaAlg) -> Self {
         self.header.alg = alg;
         self
