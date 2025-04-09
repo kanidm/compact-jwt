@@ -9,7 +9,7 @@ use crypto_glue::{
     s256,
     traits::{
         Digest, DigestSigner, DigestVerifier, FromEncodedPoint, SpkiDecodePublicKey,
-        SpkiEncodePublicKey,
+        SpkiEncodePublicKey, Zeroizing,
     },
 };
 
@@ -155,16 +155,12 @@ impl JwsEs256Signer {
     }
 
     /// Export this signer to a DER private key.
-    pub fn private_key_to_der(&self) -> Result<Vec<u8>, JwtError> {
+    pub fn private_key_to_der(&self) -> Result<Zeroizing<Vec<u8>>, JwtError> {
         // Need to make all these zeroizing.
-        self.skey
-            .to_sec1_der()
-            .map_err(|err| {
-                debug!(?err);
-                JwtError::CryptoError
-            })
-            // EVIL HACK
-            .map(|v| v.as_slice().to_vec())
+        self.skey.to_sec1_der().map_err(|err| {
+            debug!(?err);
+            JwtError::CryptoError
+        })
     }
 
     /// Get the public Jwk from this signer

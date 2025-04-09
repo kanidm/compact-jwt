@@ -1,16 +1,18 @@
 //! JWS Signing and Verification Structures
 
+use crate::compact::{JwaAlg, JwsCompact, ProtectedHeader};
 use crate::error::JwtError;
+use crate::jws::JwsCompactSign2Data;
+use crate::traits::*;
 use crate::KID_LEN;
-use openssl::{hash, pkey, rand, sign};
-
+use base64::{engine::general_purpose, Engine as _};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use crate::compact::{JwaAlg, JwsCompact, ProtectedHeader};
-use crate::jws::JwsCompactSign2Data;
-use crate::traits::*;
-use base64::{engine::general_purpose, Engine as _};
+use crypto_glue::{
+    hmac_s256::{self, HmacSha256, HmacSha256Bytes, HmacSha256Key, HmacSha256Output},
+    traits::Mac,
+};
 
 /// A JWS signer that creates HMAC SHA256 signatures.
 #[derive(Clone)]
@@ -20,9 +22,7 @@ pub struct JwsHs256Signer {
     /// The KID of this signer. This is a truncated sha256 digest.
     kid: String,
     /// Private Key
-    skey: pkey::PKey<pkey::Private>,
-    /// The matching digest
-    digest: hash::MessageDigest,
+    skey: HmacSha256Key,
 }
 
 impl fmt::Debug for JwsHs256Signer {
@@ -50,32 +50,12 @@ impl Hash for JwsHs256Signer {
 impl JwsHs256Signer {
     /// Create a new secure private key for signing
     pub fn generate_hs256() -> Result<Self, JwtError> {
-        let digest = hash::MessageDigest::sha256();
-
-        let mut buf = [0; 32];
-        rand::rand_bytes(&mut buf).map_err(|e| {
-            error!("{:?}", e);
-            JwtError::OpenSSLError
-        })?;
-
-        // Can it become a pkey?
-        let skey = pkey::PKey::hmac(&buf).map_err(|e| {
-            error!("{:?}", e);
-            JwtError::OpenSSLError
-        })?;
-
-        let kid = hash::hash(digest, &buf)
-            .map(|hashout| {
-                let mut s = hex::encode(hashout);
-                s.truncate(KID_LEN);
-                s
-            })
-            .map_err(|_| JwtError::OpenSSLError)?;
+        let skey = hmac_s256::new_key();
+        let kid = kid(&skey);
 
         Ok(JwsHs256Signer {
             kid,
             skey,
-            digest,
             sign_option_embed_kid: true,
         })
     }
@@ -92,24 +72,12 @@ impl JwsHs256Signer {
             })
             .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(bytes))?;
 
-        let mut signer = sign::Signer::new(self.digest, &self.skey).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
+        let mut hmac = HmacSha256::new(&self.skey);
+        hmac.update(hdr_b64.as_bytes());
+        hmac.update(".".as_bytes());
+        hmac.update(sign_data.payload_b64.as_bytes());
 
-        signer
-            .update(hdr_b64.as_bytes())
-            .and_then(|_| signer.update(".".as_bytes()))
-            .and_then(|_| signer.update(sign_data.payload_b64.as_bytes()))
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
-            })?;
-
-        let signature = signer.sign_to_vec().map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
+        let signature = hmac.finalize().into_bytes().to_vec();
 
         let jwsc = JwsCompact {
             header: sign_data.header,
@@ -127,28 +95,23 @@ impl TryFrom<&[u8]> for JwsHs256Signer {
 
     fn try_from(buf: &[u8]) -> Result<Self, Self::Error> {
         if buf.len() < 32 {
-            return Err(JwtError::OpenSSLError);
+            return Err(JwtError::CryptoError);
         }
 
-        let digest = hash::MessageDigest::sha256();
+        let mut skey = HmacSha256Key::default();
+        let key_bytes_mut = skey.as_mut_slice();
 
-        let kid = hash::hash(digest, buf)
-            .map(|hashout| {
-                let mut s = hex::encode(hashout);
-                s.truncate(KID_LEN);
-                s
-            })
-            .map_err(|_| JwtError::OpenSSLError)?;
+        if buf.len() > key_bytes_mut.len() {
+            return Err(JwtError::CryptoError);
+        }
 
-        let skey = pkey::PKey::hmac(buf).map_err(|e| {
-            error!("{:?}", e);
-            JwtError::OpenSSLError
-        })?;
+        key_bytes_mut[..buf.len()].copy_from_slice(buf);
+
+        let kid = kid(&skey);
 
         Ok(JwsHs256Signer {
             kid,
             skey,
-            digest,
             sign_option_embed_kid: true,
         })
     }
@@ -204,32 +167,38 @@ impl JwsVerifier for JwsHs256Signer {
             return Err(JwtError::ValidatorAlgMismatch);
         }
 
-        let mut signer = sign::Signer::new(self.digest, &self.skey).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
+        let signature =
+            HmacSha256Bytes::from_exact_iter(signed_data.signature_bytes.iter().copied())
+                .map(HmacSha256Output::new)
+                .ok_or_else(|| {
+                    debug!("Invalid HMAC signature length");
+                    JwtError::CryptoError
+                })?;
 
-        signer
-            .update(signed_data.hdr_bytes)
-            .and_then(|_| signer.update(".".as_bytes()))
-            .and_then(|_| signer.update(signed_data.payload_bytes))
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
-            })?;
+        let mut hmac = HmacSha256::new(&self.skey);
+        hmac.update(signed_data.hdr_bytes);
+        hmac.update(".".as_bytes());
+        hmac.update(signed_data.payload_bytes);
 
-        let ver_sig = signer.sign_to_vec().map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
+        let verification_signature = hmac.finalize();
 
-        if signed_data.signature_bytes == ver_sig.as_slice() {
+        // This is a constant time check.
+        if signature == verification_signature {
             signed_data.release().and_then(|d| jwsc.post_process(d))
         } else {
             debug!("invalid signature");
             Err(JwtError::InvalidSignature)
         }
     }
+}
+
+fn kid(skey: &HmacSha256Key) -> String {
+    let mut hmac = HmacSha256::new(&skey);
+    hmac.update(b"key identifier");
+    let hashout = hmac.finalize();
+    let mut kid = hex::encode(hashout.into_bytes());
+    kid.truncate(KID_LEN);
+    kid
 }
 
 #[cfg(test)]
