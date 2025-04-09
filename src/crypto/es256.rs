@@ -1,34 +1,25 @@
 //! JWS Signing and Verification Structures
 
 use crypto_glue::{
-    s256,
     ecdsa_p256::{
-        self,
-        EcdsaP256PrivateKey,
-        EcdsaP256Digest,
-        EcdsaP256PublicEncodedPoint,
-        EcdsaP256PublicKey,
-        EcdsaP256FieldBytes,
-        EcdsaP256Signature,
-        EcdsaP256SigningKey,
-        EcdsaP256SignatureBytes,
+        self, EcdsaP256Digest, EcdsaP256FieldBytes, EcdsaP256PrivateKey,
+        EcdsaP256PublicEncodedPoint, EcdsaP256PublicKey, EcdsaP256Signature,
+        EcdsaP256SignatureBytes, EcdsaP256SigningKey, EcdsaP256VerifyingKey,
     },
+    s256,
     traits::{
-        FromEncodedPoint,
-        Digest,
-        DigestSigner,
+        Digest, DigestSigner, DigestVerifier, FromEncodedPoint, SpkiDecodePublicKey,
         SpkiEncodePublicKey,
-        SpkiDecodePublicKey,
-    }
+    },
 };
 
-use std::fmt;
-use std::hash::{Hash, Hasher};
+use crate::compact::{EcCurve, JwaAlg, Jwk, JwkUse, JwsCompact, ProtectedHeader};
 use crate::error::JwtError;
+use crate::traits::*;
 use crate::KID_LEN;
 use base64::{engine::general_purpose, Engine as _};
-use crate::compact::{EcCurve, JwaAlg, Jwk, JwkUse, JwsCompact, ProtectedHeader};
-use crate::traits::*;
+use std::fmt;
+use std::hash::{Hash, Hasher};
 
 /// A JWS signer that creates ECDSA P-256 signatures.
 #[derive(Clone)]
@@ -83,7 +74,6 @@ impl JwsEs256Signer {
             JwtError::InvalidBase64
         })?;
 
-
         let mut field_x = EcdsaP256FieldBytes::default();
         if x.len() != field_x.len() {
             return Err(JwtError::CryptoError);
@@ -101,15 +91,12 @@ impl JwsEs256Signer {
 
         let public = EcdsaP256PublicKey::from_encoded_point(&ep)
             .into_option()
-            .ok_or_else(|| {
-                JwtError::CryptoError
-            })?;
+            .ok_or_else(|| JwtError::CryptoError)?;
 
-        let skey = EcdsaP256PrivateKey::from_slice(&d)
-            .map_err(|err| {
-                debug!(?err);
-                JwtError::CryptoError
-            })?;
+        let skey = EcdsaP256PrivateKey::from_slice(&d).map_err(|err| {
+            debug!(?err);
+            JwtError::CryptoError
+        })?;
 
         let pub_key = skey.public_key();
 
@@ -151,11 +138,10 @@ impl JwsEs256Signer {
 
     /// Restore this JwsSigner from a DER private key.
     pub fn from_es256_der(der: &[u8]) -> Result<Self, JwtError> {
-        let skey = EcdsaP256PrivateKey::from_sec1_der(der)
-            .map_err(|err| {
-                debug!(?err);
-                JwtError::CryptoError
-            })?;
+        let skey = EcdsaP256PrivateKey::from_sec1_der(der).map_err(|err| {
+            debug!(?err);
+            JwtError::CryptoError
+        })?;
 
         let pub_key = skey.public_key();
         let kid = kid_from_public(&pub_key);
@@ -171,15 +157,14 @@ impl JwsEs256Signer {
     /// Export this signer to a DER private key.
     pub fn private_key_to_der(&self) -> Result<Vec<u8>, JwtError> {
         // Need to make all these zeroizing.
-        todo!();
-
-        /*
-        self.skey.to_sec1_der()
+        self.skey
+            .to_sec1_der()
             .map_err(|err| {
                 debug!(?err);
                 JwtError::CryptoError
             })
-        */
+            // EVIL HACK
+            .map(|v| v.as_slice().to_vec())
     }
 
     /// Get the public Jwk from this signer
@@ -189,11 +174,13 @@ impl JwsEs256Signer {
 
         let encoded_point = EcdsaP256PublicEncodedPoint::from(pub_key);
 
-        let public_key_x = encoded_point.x()
+        let public_key_x = encoded_point
+            .x()
             .map(|bytes| bytes.to_vec())
             .unwrap_or_default();
 
-        let public_key_y = encoded_point.x()
+        let public_key_y = encoded_point
+            .y()
             .map(|bytes| bytes.to_vec())
             .unwrap_or_default();
 
@@ -214,7 +201,7 @@ impl JwsSignerToVerifier for JwsEs256Signer {
     fn get_verifier(&self) -> Result<Self::Verifier, JwtError> {
         Ok(JwsEs256Verifier {
             kid: self.kid.clone(),
-            pkey: self.skey.public_key()
+            pkey: self.skey.public_key(),
         })
     }
 }
@@ -262,13 +249,12 @@ impl JwsSigner for JwsEs256Signer {
 
         let signer = EcdsaP256SigningKey::from(&self.skey);
 
-        let ec_sig: EcdsaP256Signature = signer.try_sign_digest(hasher)
-            .map_err(|err| {
-                debug!(?err);
-                JwtError::CryptoError
-            })?;
+        let signature: EcdsaP256Signature = signer.try_sign_digest(hasher).map_err(|err| {
+            debug!(?err);
+            JwtError::CryptoError
+        })?;
 
-        let signature: EcdsaP256SignatureBytes  = ec_sig.to_bytes();
+        let signature: EcdsaP256SignatureBytes = signature.to_bytes();
 
         let jwsc = JwsCompact {
             header: sign_data.header,
@@ -310,37 +296,30 @@ impl TryFrom<&Jwk> for JwsEs256Verifier {
                 use_: _,
                 kid,
             } => {
+                let mut field_x = EcdsaP256FieldBytes::default();
+                if x.len() != field_x.len() {
+                    debug!("x field len error");
+                    return Err(JwtError::CryptoError);
+                }
 
-            let x = general_purpose::URL_SAFE_NO_PAD.decode(x).map_err(|e| {
-                debug!(?e);
-                JwtError::InvalidBase64
-            })?;
-            let y = general_purpose::URL_SAFE_NO_PAD.decode(y).map_err(|e| {
-                debug!(?e);
-                JwtError::InvalidBase64
-            })?;
+                let mut field_y = EcdsaP256FieldBytes::default();
+                if y.len() != field_y.len() {
+                    debug!("y field len error");
+                    return Err(JwtError::CryptoError);
+                }
 
-            let mut field_x = EcdsaP256FieldBytes::default();
-            if x.len() != field_x.len() {
-                return Err(JwtError::CryptoError);
-            }
+                field_x.copy_from_slice(x);
+                field_y.copy_from_slice(y);
 
-            let mut field_y = EcdsaP256FieldBytes::default();
-            if y.len() != field_y.len() {
-                return Err(JwtError::CryptoError);
-            }
+                let encoded_point =
+                    EcdsaP256PublicEncodedPoint::from_affine_coordinates(&field_x, &field_y, false);
 
-            field_x.copy_from_slice(&x);
-            field_y.copy_from_slice(&y);
-
-            let ep = EcdsaP256PublicEncodedPoint::from_affine_coordinates(&field_x, &field_y, false);
-
-            let pub_key = EcdsaP256PublicKey::from_encoded_point(&ep)
-                .into_option()
-                .ok_or_else(|| {
-                    JwtError::CryptoError
-                })?;
-
+                let pub_key = EcdsaP256PublicKey::from_encoded_point(&encoded_point)
+                    .into_option()
+                    .ok_or_else(|| {
+                        debug!("invalid encoded point");
+                        JwtError::CryptoError
+                    })?;
 
                 let kid = if let Some(kid) = kid.clone() {
                     kid
@@ -367,11 +346,10 @@ impl TryFrom<&Jwk> for JwsEs256Verifier {
 impl JwsEs256Verifier {
     /// Restore this JwsEs256Verifier from a DER public key.
     pub fn from_es256_der(der: &[u8]) -> Result<Self, JwtError> {
-        let pkey = EcdsaP256PublicKey::from_public_key_der(der)
-            .map_err(|err| {
-                debug!(?err);
-                JwtError::CryptoError
-            })?;
+        let pkey = EcdsaP256PublicKey::from_public_key_der(der).map_err(|err| {
+            debug!(?err);
+            JwtError::CryptoError
+        })?;
 
         let kid = kid_from_public(&pkey);
 
@@ -380,23 +358,26 @@ impl JwsEs256Verifier {
 
     /// Export this verifier's DER public key.
     pub fn public_key_to_der(&self) -> Result<Vec<u8>, JwtError> {
-        self.pkey.to_public_key_der()
-        .map(|asn1_der| asn1_der.to_vec())
-        .map_err(|err| {
-            debug!(?err);
-            JwtError::CryptoError
-        })
+        self.pkey
+            .to_public_key_der()
+            .map(|asn1_der| asn1_der.to_vec())
+            .map_err(|err| {
+                debug!(?err);
+                JwtError::CryptoError
+            })
     }
 
     /// Get the public Jwk from this verifier
     pub fn public_key_as_jwk(&self) -> Result<Jwk, JwtError> {
         let encoded_point = EcdsaP256PublicEncodedPoint::from(self.pkey);
 
-        let public_key_x = encoded_point.x()
+        let public_key_x = encoded_point
+            .x()
             .map(|bytes| bytes.to_vec())
             .unwrap_or_default();
 
-        let public_key_y = encoded_point.x()
+        let public_key_y = encoded_point
+            .y()
             .map(|bytes| bytes.to_vec())
             .unwrap_or_default();
 
@@ -417,7 +398,6 @@ impl JwsVerifier for JwsEs256Verifier {
     }
 
     fn verify<V: JwsVerifiable>(&self, jwsc: &V) -> Result<V::Verified, JwtError> {
-        /*
         let signed_data = jwsc.data();
 
         if signed_data.header.alg != JwaAlg::ES256 {
@@ -425,56 +405,26 @@ impl JwsVerifier for JwsEs256Verifier {
             return Err(JwtError::ValidatorAlgMismatch);
         }
 
-        if signed_data.signature_bytes.len() != 64 {
-            return Err(JwtError::InvalidSignature);
-        }
-
-        let r = bn::BigNum::from_slice(&signed_data.signature_bytes[..32]).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-        let s = bn::BigNum::from_slice(&signed_data.signature_bytes[32..64]).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-
-        let sig = ecdsa::EcdsaSig::from_private_components(r, s).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-
-        let mut hasher = hash::Hasher::new(self.digest).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-
-        hasher
-            .update(signed_data.hdr_bytes)
-            .and_then(|_| hasher.update(".".as_bytes()))
-            .and_then(|_| hasher.update(signed_data.payload_bytes))
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
+        let signature =
+            EcdsaP256Signature::from_slice(signed_data.signature_bytes).map_err(|err| {
+                debug!(?err, "invalid signature length");
+                JwtError::InvalidSignature
             })?;
 
-        let hashout = hasher.finish().map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
+        let mut hasher = EcdsaP256Digest::new();
+
+        hasher.update(signed_data.hdr_bytes);
+        hasher.update(".".as_bytes());
+        hasher.update(signed_data.payload_bytes);
+
+        let verifier = EcdsaP256VerifyingKey::from(&self.pkey);
+
+        verifier.verify_digest(hasher, &signature).map_err(|err| {
+            debug!(?err, "invalid signature");
+            JwtError::InvalidSignature
         })?;
 
-        let valid = sig.verify(&hashout, &self.pkey).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-
-        if valid {
-            signed_data.release().and_then(|d| jwsc.post_process(d))
-        } else {
-            debug!("invalid signature");
-            Err(JwtError::InvalidSignature)
-        }
-        */
-        todo!();
+        signed_data.release().and_then(|d| jwsc.post_process(d))
     }
 }
 
