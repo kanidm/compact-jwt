@@ -15,7 +15,9 @@ pub trait JwsSigner {
 
     /// Get the legacy format key id from this signer. This value will be removed
     /// in a future release.
-    fn get_legacy_kid(&self) -> &str;
+    fn get_legacy_kid(&self) -> &str {
+        "no legacy kid"
+    }
 
     /// Update thee content of the header with signer specific data
     fn update_header(&self, header: &mut ProtectedHeader) -> Result<(), JwtError>;
@@ -36,7 +38,9 @@ pub trait JwsMutSigner {
 
     /// Get the legacy format key id from this signer. This value will be removed
     /// in a future release.
-    fn get_legacy_kid(&mut self) -> &str;
+    fn get_legacy_kid(&mut self) -> &str {
+        "no legacy kid"
+    }
 
     /// Update thee content of the header with signer specific data
     fn update_header(&mut self, header: &mut ProtectedHeader) -> Result<(), JwtError>;
