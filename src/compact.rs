@@ -366,7 +366,6 @@ pub enum JweEnc {
     /// encrypted and authenticated.
     A256GCM,
     /// AES 128 CBC with HMAC 256
-    /// WARNING: Decrypted values may not be correct as the CEK is not HMACed.
     #[serde(rename = "A128CBC-HS256")]
     A128CBC_HS256,
 }
