@@ -6,20 +6,24 @@ use openssl::x509::X509;
 
 use crate::compact::{JweCompact, JweEnc, JwsCompact};
 
+use crypto_glue::aes256::Aes256Key;
+
 mod es256;
 mod hs256;
 mod rs256;
 mod x509;
 
-mod rsaes_oaep;
+// mod rsaes_oaep;
 
-mod a128cbc_hs256;
-mod a128gcm;
-mod a128kw;
+// mod a128cbc_hs256;
+// mod a128gcm;
+// mod a128kw;
+
 mod a256gcm;
 mod a256kw;
+mod ecdhes_a256kw;
 
-mod ecdhes_a128kw;
+// mod direct;
 
 #[cfg(feature = "hsm-crypto")]
 mod tpm;
@@ -32,12 +36,14 @@ pub use hs256::JwsHs256Signer;
 pub use rs256::{JwsRs256Signer, JwsRs256Verifier};
 pub use x509::{JwsX509Verifier, JwsX509VerifierBuilder};
 
-pub use a128gcm::JweA128GCMEncipher;
-pub use a128kw::JweA128KWEncipher;
+// pub use a128gcm::JweA128GCMEncipher;
+// pub use a128kw::JweA128KWEncipher;
 pub use a256gcm::JweA256GCMEncipher;
 pub use a256kw::JweA256KWEncipher;
-pub use ecdhes_a128kw::{JweEcdhEsA128KWDecipher, JweEcdhEsA128KWEncipher};
-pub use rsaes_oaep::{JweRSAOAEPDecipher, JweRSAOAEPEncipher};
+// pub use ecdhes_a128kw::{JweEcdhEsA128KWDecipher, JweEcdhEsA128KWEncipher};
+pub use ecdhes_a256kw::{JweEcdhEsA256KWDecipher, JweEcdhEsA256KWEncipher};
+
+// pub use rsaes_oaep::{JweRSAOAEPDecipher, JweRSAOAEPEncipher};
 
 #[cfg(feature = "msextensions")]
 pub use ms_oapxbc::MsOapxbcSessionKey;
@@ -83,26 +89,17 @@ impl JwsCompact {
 }
 
 impl JweEnc {
-    pub(crate) fn key_len(self) -> usize {
-        match self {
-            JweEnc::A128GCM => a128gcm::JweA128GCMEncipher::key_len(),
-            JweEnc::A256GCM => a256gcm::JweA256GCMEncipher::key_len(),
-            JweEnc::A128CBC_HS256 => a128cbc_hs256::JweA128CBCHS256Decipher::key_len(),
-        }
-    }
-
-    pub(crate) fn decipher_inner(
+    pub(crate) fn decipher_inner_a256(
         self,
-        key_buffer: &[u8],
+        aes256key: Aes256Key,
         jwec: &JweCompact,
     ) -> Result<Vec<u8>, JwtError> {
         match self {
-            JweEnc::A128GCM => a128gcm::JweA128GCMEncipher::try_from(key_buffer)
-                .and_then(|jwe_decipher| jwe_decipher.decipher_inner(jwec)),
-            JweEnc::A256GCM => a256gcm::JweA256GCMEncipher::try_from(key_buffer)
-                .and_then(|jwe_decipher| jwe_decipher.decipher_inner(jwec)),
-            JweEnc::A128CBC_HS256 => a128cbc_hs256::JweA128CBCHS256Decipher::try_from(key_buffer)
-                .and_then(|jwe_decipher| jwe_decipher.decipher_inner(jwec)),
+            JweEnc::A256GCM => a256gcm::JweA256GCMEncipher::from(aes256key).decipher_inner(jwec),
+            // JweEnc::A128GCM => a128gcm::JweA128GCMEncipher::try_from(key_buffer)
+            //     .and_then(|jwe_decipher| jwe_decipher.decipher_inner(jwec)),
+            // JweEnc::A128CBC_HS256 => a128cbc_hs256::JweA128CBCHS256Decipher::try_from(key_buffer)
+            //     .and_then(|jwe_decipher| jwe_decipher.decipher_inner(jwec)),
         }
     }
 }

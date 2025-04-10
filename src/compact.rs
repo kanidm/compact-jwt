@@ -338,17 +338,23 @@ impl<'a> JwsCompactVerifyData<'a> {
 #[allow(non_camel_case_types)]
 /// Cryptographic algorithm
 pub enum JweAlg {
-    /// AES 128 Key Wrap
-    #[default]
-    A128KW,
+    // /// AES 128 Key Wrap
+    // A128KW,
     /// AES 256 Key Wrap
+    #[default]
     A256KW,
+
+    // /// ECDH-ES
+    // #[serde(rename = "ECDH-ES+A128KW")]
+    // ECDH_ES_A128KW,
     /// ECDH-ES
-    #[serde(rename = "ECDH-ES+A128KW")]
-    ECDH_ES_A128KW,
+    #[serde(rename = "ECDH-ES+A256KW")]
+    ECDH_ES_A256KW,
+
     /// RSA-OAEP
     #[serde(rename = "RSA-OAEP")]
     RSA_OAEP,
+
     /// Direct
     #[serde(rename = "dir")]
     DIRECT,
@@ -358,16 +364,17 @@ pub enum JweAlg {
 #[allow(non_camel_case_types)]
 /// Encipherment algorithm
 pub enum JweEnc {
-    /// AES 128 GCM. Header is authenticated but not encrypted, the payload is
-    /// encrypted and authenticated.
-    #[default]
-    A128GCM,
     /// AES 256 GCM. Header is authenticated but not encrypted, the payload is
     /// encrypted and authenticated.
+    #[default]
     A256GCM,
-    /// AES 128 CBC with HMAC 256
-    #[serde(rename = "A128CBC-HS256")]
-    A128CBC_HS256,
+    // /// AES 128 GCM. Header is authenticated but not encrypted, the payload is
+    // /// encrypted and authenticated.
+    // A128GCM,
+
+    // /// AES 128 CBC with HMAC 256
+    // #[serde(rename = "A128CBC-HS256")]
+    // A128CBC_HS256,
 }
 
 /// A header that will be signed and embedded in the Jws

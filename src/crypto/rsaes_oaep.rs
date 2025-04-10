@@ -3,7 +3,7 @@ use crate::jwe::Jwe;
 use crate::JwtError;
 
 use crate::compact::JweProtectedHeader;
-use crate::traits::{JweEncipherInner, JweEncipherOuter};
+use crate::traits::{JweEncipherInnerA256, JweEncipherOuterA256};
 
 use openssl::encrypt::{Decrypter, Encrypter};
 use openssl::hash::MessageDigest;
@@ -19,6 +19,7 @@ pub struct JweRSAOAEPDecipher {
     rsa_priv_key: PKey<Private>,
 }
 
+/*
 impl TryFrom<Rsa<Private>> for JweRSAOAEPDecipher {
     type Error = JwtError;
 
@@ -31,9 +32,11 @@ impl TryFrom<Rsa<Private>> for JweRSAOAEPDecipher {
         Ok(JweRSAOAEPDecipher { rsa_priv_key })
     }
 }
+*/
 
 impl JweRSAOAEPDecipher {
     pub(crate) fn unwrap_key(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
+        /*
         let expected_wrap_key_buffer_len = jwec.header.enc.key_len();
 
         // Decrypt cek
@@ -84,21 +87,28 @@ impl JweRSAOAEPDecipher {
         unwrapped_key.truncate(expected_wrap_key_buffer_len);
 
         Ok(unwrapped_key)
+        */
+
+        todo!();
     }
 
     /// Given a JWE in compact form, decipher and authenticate its content.
     pub fn decipher(&self, jwec: &JweCompact) -> Result<Jwe, JwtError> {
+        /*
         let unwrapped_key = self.unwrap_key(jwec)?;
 
         let payload = jwec
             .header
             .enc
-            .decipher_inner(unwrapped_key.as_slice(), jwec)?;
+            .decipher_inner_a256(unwrapped_key.as_slice(), jwec)?;
 
         Ok(Jwe {
             header: jwec.header.clone(),
             payload,
         })
+        */
+
+        todo!();
     }
 }
 
@@ -108,6 +118,7 @@ pub struct JweRSAOAEPEncipher {
     rsa_pub_key: PKey<Public>,
 }
 
+/*
 impl TryFrom<Rsa<Public>> for JweRSAOAEPEncipher {
     type Error = JwtError;
 
@@ -120,22 +131,24 @@ impl TryFrom<Rsa<Public>> for JweRSAOAEPEncipher {
         Ok(JweRSAOAEPEncipher { rsa_pub_key })
     }
 }
+*/
 
 impl JweRSAOAEPEncipher {
     /// Given a JWE, encipher its content to a compact form.
-    pub fn encipher<E: JweEncipherInner>(&self, jwe: &Jwe) -> Result<JweCompact, JwtError> {
+    pub fn encipher<E: JweEncipherInnerA256>(&self, jwe: &Jwe) -> Result<JweCompact, JwtError> {
         let encipher = E::new_ephemeral()?;
         encipher.encipher_inner(self, jwe)
     }
 }
 
-impl JweEncipherOuter for JweRSAOAEPEncipher {
+impl JweEncipherOuterA256 for JweRSAOAEPEncipher {
     fn set_header_alg(&self, hdr: &mut JweProtectedHeader) -> Result<(), JwtError> {
         hdr.alg = JweAlg::RSA_OAEP;
         Ok(())
     }
 
     fn wrap_key(&self, key_to_wrap: &[u8]) -> Result<Vec<u8>, JwtError> {
+        /*
         let mut wrap_key_encrypter = Encrypter::new(&self.rsa_pub_key).map_err(|ossl_err| {
             debug!(?ossl_err);
             JwtError::OpenSSLError
@@ -181,6 +194,7 @@ impl JweEncipherOuter for JweRSAOAEPEncipher {
         wrapped_key.truncate(encoded_len);
 
         Ok(wrapped_key)
+        */
     }
 }
 

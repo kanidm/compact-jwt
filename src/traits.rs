@@ -5,6 +5,7 @@ use crate::compact::{JwsCompact, JwsCompactVerifyData, ProtectedHeader};
 use crate::error::JwtError;
 use crate::jwe::Jwe;
 use crate::jws::{Jws, JwsCompactSign2Data};
+use crypto_glue::{aes256::Aes256Key, aes256kw::Aes256KwWrapped};
 
 /// A trait defining how a JwsSigner will operate.
 ///
@@ -112,23 +113,18 @@ pub trait JwsSignable {
     fn post_process(&self, value: JwsCompact) -> Result<Self::Signed, JwtError>;
 }
 
-/// A trait defining types that provide outer content encryption key wrapping.
-pub trait JweEncipherOuter {
+/// A trait defining types that provide outer content encryption key wrapping supporting
+/// AES256 Keys used for the inner encryption
+pub trait JweEncipherOuterA256 {
     /// Given a protected header, set the algorithm used by this outer key wrap
     fn set_header_alg(&self, hdr: &mut JweProtectedHeader) -> Result<(), JwtError>;
 
     /// Wrap the provided ephemeral key
-    fn wrap_key(&self, key_to_wrap: &[u8]) -> Result<Vec<u8>, JwtError>;
+    fn wrap_key(&self, wrapping_key: Aes256Key) -> Result<Aes256KwWrapped, JwtError>;
 }
 
-/// A marker trait indicating that this type uses 128 bit keys.
-pub trait JweEncipherInnerK128 {}
-
-/// A marker trait indicating that this type uses 256 bit keys.
-pub trait JweEncipherInnerK256 {}
-
-/// A trait defining types that provide inner content encryption
-pub trait JweEncipherInner {
+/// A trait defining types that provide inner content encryption with AES256 Keys
+pub trait JweEncipherInnerA256 {
     /// Generate a new ephemeral key for this inner encipher. Keys are always
     /// ephemeral with inner types as they are "one use" only.
     fn new_ephemeral() -> Result<Self, JwtError>
@@ -136,7 +132,7 @@ pub trait JweEncipherInner {
         Self: Sized;
 
     /// Encipher the inner content of a jwe
-    fn encipher_inner<O: JweEncipherOuter>(
+    fn encipher_inner<O: JweEncipherOuterA256>(
         &self,
         outer: &O,
         jwe: &Jwe,
