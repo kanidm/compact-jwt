@@ -75,7 +75,7 @@ impl JweEncipherInnerA256 for JweA256GCMEncipher {
         Ok(JweCompact {
             header,
             hdr_b64,
-            content_enc_key: wrapped_content_enc_key.to_vec(),
+            content_enc_key: wrapped_content_enc_key,
             iv: nonce.to_vec(),
             ciphertext: encryption_data,
             authentication_tag: authentication_tag.to_vec(),

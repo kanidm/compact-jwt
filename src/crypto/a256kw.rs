@@ -25,7 +25,7 @@ impl JweEncipherOuterA256 for JweA256KWEncipher {
         Ok(())
     }
 
-    fn wrap_key(&self, key_to_wrap: Aes256Key) -> Result<Aes256KwWrapped, JwtError> {
+    fn wrap_key(&self, key_to_wrap: Aes256Key) -> Result<Vec<u8>, JwtError> {
         let key_wrap = Aes256Kw::new(&self.wrap_key);
         let mut wrapped_key = Aes256KwWrapped::default();
 
@@ -36,7 +36,7 @@ impl JweEncipherOuterA256 for JweA256KWEncipher {
                 JwtError::CryptoError
             })?;
 
-        Ok(wrapped_key)
+        Ok(wrapped_key.to_vec())
     }
 }
 

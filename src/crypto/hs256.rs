@@ -1,18 +1,16 @@
 //! JWS Signing and Verification Structures
-
 use crate::compact::{JwaAlg, JwsCompact, ProtectedHeader};
 use crate::error::JwtError;
 use crate::jws::JwsCompactSign2Data;
 use crate::traits::*;
 use crate::KID_LEN;
 use base64::{engine::general_purpose, Engine as _};
-use std::fmt;
-use std::hash::{Hash, Hasher};
-
 use crypto_glue::{
     hmac_s256::{self, HmacSha256, HmacSha256Bytes, HmacSha256Key, HmacSha256Output},
     traits::Mac,
 };
+use std::fmt;
+use std::hash::{Hash, Hasher};
 
 /// A JWS signer that creates HMAC SHA256 signatures.
 #[derive(Clone)]

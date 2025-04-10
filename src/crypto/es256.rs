@@ -1,5 +1,4 @@
 //! JWS Signing and Verification Structures
-
 use crypto_glue::{
     ecdsa_p256::{
         self, EcdsaP256Digest, EcdsaP256FieldBytes, EcdsaP256PrivateKey,

@@ -5,7 +5,7 @@ use crate::compact::{JwsCompact, JwsCompactVerifyData, ProtectedHeader};
 use crate::error::JwtError;
 use crate::jwe::Jwe;
 use crate::jws::{Jws, JwsCompactSign2Data};
-use crypto_glue::{aes256::Aes256Key, aes256kw::Aes256KwWrapped};
+use crypto_glue::aes256::Aes256Key;
 
 /// A trait defining how a JwsSigner will operate.
 ///
@@ -120,7 +120,7 @@ pub trait JweEncipherOuterA256 {
     fn set_header_alg(&self, hdr: &mut JweProtectedHeader) -> Result<(), JwtError>;
 
     /// Wrap the provided ephemeral key
-    fn wrap_key(&self, wrapping_key: Aes256Key) -> Result<Aes256KwWrapped, JwtError>;
+    fn wrap_key(&self, wrapping_key: Aes256Key) -> Result<Vec<u8>, JwtError>;
 }
 
 /// A trait defining types that provide inner content encryption with AES256 Keys

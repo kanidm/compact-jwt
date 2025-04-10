@@ -8,18 +8,17 @@ use crate::compact::{JweCompact, JweEnc, JwsCompact};
 
 use crypto_glue::aes256::Aes256Key;
 
+// JWS types
 mod es256;
 mod hs256;
 mod rs256;
 mod x509;
 
-// mod rsaes_oaep;
-
+// JWE types
 mod a256gcm;
 mod a256kw;
 mod ecdhes_a256kw;
-
-// mod direct;
+mod rsaes_oaep;
 
 #[cfg(feature = "hsm-crypto")]
 mod tpm;
@@ -35,8 +34,7 @@ pub use x509::{JwsX509Verifier, JwsX509VerifierBuilder};
 pub use a256gcm::JweA256GCMEncipher;
 pub use a256kw::JweA256KWEncipher;
 pub use ecdhes_a256kw::{JweEcdhEsA256KWDecipher, JweEcdhEsA256KWEncipher};
-
-// pub use rsaes_oaep::{JweRSAOAEPDecipher, JweRSAOAEPEncipher};
+pub use rsaes_oaep::{JweRSAOAEPDecipher, JweRSAOAEPEncipher};
 
 #[cfg(feature = "msextensions")]
 pub use ms_oapxbc::MsOapxbcSessionKey;
@@ -99,9 +97,8 @@ impl JweEnc {
     }
 }
 
-/*
+#[cfg(test)]
 impl JweCompact {
-    #[cfg(test)]
     fn check_vectors(
         &self,
         chk_cek: &[u8],
@@ -115,4 +112,3 @@ impl JweCompact {
             && chk_aad == &self.authentication_tag
     }
 }
-*/

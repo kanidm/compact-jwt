@@ -1,21 +1,15 @@
+use super::a256kw::JweA256KWEncipher;
 use crate::compact::{EcCurve, JweAlg, JweCompact, JweProtectedHeader, Jwk};
 use crate::jwe::Jwe;
 use crate::traits::*;
 use crate::JwtError;
-
-use super::a256kw::JweA256KWEncipher;
 use crypto_glue::{
     aes256::Aes256Key,
-    aes256kw::Aes256KwWrapped,
-    traits::FromEncodedPoint,
     ecdh_p256::{
-        self,
-        EcdhP256EphemeralSecret,
-        EcdhP256Hkdf,
-        EcdhP256PublicEncodedPoint,
-        EcdhP256PublicKey,
-        EcdhP256FieldBytes,
+        self, EcdhP256EphemeralSecret, EcdhP256FieldBytes, EcdhP256Hkdf,
+        EcdhP256PublicEncodedPoint, EcdhP256PublicKey,
     },
+    traits::FromEncodedPoint,
 };
 
 /// An ephemeral private key that can create enciphered JWE's. This type must only be used *once*.
@@ -54,7 +48,7 @@ impl JweEncipherOuterA256 for JweEcdhEsA256KWEncipher {
         Ok(())
     }
 
-    fn wrap_key(&self, key_to_wrap: Aes256Key) -> Result<Aes256KwWrapped, JwtError> {
+    fn wrap_key(&self, key_to_wrap: Aes256Key) -> Result<Vec<u8>, JwtError> {
         let wrapping_key = derive_key(&self.priv_key, &self.peer_public_key)?;
         JweA256KWEncipher::from(wrapping_key).wrap_key(key_to_wrap)
     }
@@ -164,18 +158,16 @@ fn derive_key(
     priv_key: &EcdhP256EphemeralSecret,
     pub_key: &EcdhP256PublicKey,
 ) -> Result<Aes256Key, JwtError> {
-
     let shared_secret = priv_key.diffie_hellman(pub_key);
 
     let mut new_key = Aes256Key::default();
 
     let kdf: EcdhP256Hkdf = shared_secret.extract(None);
 
-    kdf.expand(&[], &mut new_key)
-        .map_err(|err| {
-            debug!(?err);
-            JwtError::CryptoError
-        })?;
+    kdf.expand(&[], &mut new_key).map_err(|err| {
+        debug!(?err);
+        JwtError::CryptoError
+    })?;
 
     Ok(new_key)
 }
