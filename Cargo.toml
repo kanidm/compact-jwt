@@ -13,14 +13,14 @@ license = "MPL-2.0"
 [features]
 unsafe_release_without_verify = []
 hsm-crypto = ["kanidm-hsm-crypto"]
-msextensions = ["dep:openssl-kdf", "openssl", "kanidm-hsm-crypto/msextensions"]
+msextensions = ["dep:openssl-kdf", "openssl"]
 default = ["openssl"]
 
 [package.metadata.docs.rs]
 all-features = true
 
 [patch.crates-io]
-# kanidm-hsm-crypto = { path = "../hsm-crypto" }
+kanidm-hsm-crypto = { path = "../hsm-crypto" }
 crypto-glue = { path = "../crypto-glue" }
 
 [dependencies]
@@ -30,10 +30,7 @@ base64 = "^0.21.5"
 base64urlsafedata = "^0.5.1"
 
 crypto-glue = "^0.1.1"
-kanidm-hsm-crypto = { version = "^0.2.0", optional = true }
-
-
-
+kanidm-hsm-crypto = { version = "0.3.0", optional = true }
 
 openssl = { version = "^0.10.38", optional = true }
 openssl-kdf = { version = "0.4.2", optional = true }

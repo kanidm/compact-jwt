@@ -21,7 +21,7 @@ mod ecdhes_a256kw;
 mod rsaes_oaep;
 
 #[cfg(feature = "hsm-crypto")]
-mod tpm;
+mod tpm_es256;
 
 #[cfg(feature = "msextensions")]
 mod ms_oapxbc;
@@ -40,7 +40,7 @@ pub use rsaes_oaep::{JweRSAOAEPDecipher, JweRSAOAEPEncipher};
 pub use ms_oapxbc::MsOapxbcSessionKey;
 
 #[cfg(feature = "hsm-crypto")]
-pub use tpm::JwsTpmSigner;
+pub use tpm_es256::JwsTpmEs256Signer;
 
 #[cfg(test)]
 impl JwsCompact {

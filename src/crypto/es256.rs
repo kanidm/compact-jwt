@@ -278,6 +278,13 @@ pub struct JwsEs256Verifier {
     pkey: EcdsaP256PublicKey,
 }
 
+impl From<EcdsaP256PublicKey> for JwsEs256Verifier {
+    fn from(pkey: EcdsaP256PublicKey) -> Self {
+        let kid = kid_from_public(&pkey);
+        JwsEs256Verifier { kid, pkey }
+    }
+}
+
 impl TryFrom<&Jwk> for JwsEs256Verifier {
     type Error = JwtError;
 

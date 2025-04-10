@@ -72,17 +72,6 @@ pub trait JwsVerifier {
     fn verify<V: JwsVerifiable>(&self, _jwsc: &V) -> Result<V::Verified, JwtError>;
 }
 
-/// A trait defining how a JwsVerifier will operate.
-///
-/// Note that due to the design of this api, you can NOT define your own verifier.
-pub trait JwsMutVerifier {
-    /// Get the key id from this verifier
-    fn get_kid(&mut self) -> &str;
-
-    /// Perform the signature verification
-    fn verify<V: JwsVerifiable>(&mut self, _jwsc: &V) -> Result<V::Verified, JwtError>;
-}
-
 /// A trait defining types that can be verified by a [JwsVerifier]
 pub trait JwsVerifiable {
     /// The type that should be emitted when the verification is complete
