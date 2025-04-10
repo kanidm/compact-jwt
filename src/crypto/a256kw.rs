@@ -79,22 +79,3 @@ impl JweA256KWEncipher {
         })
     }
 }
-
-/*
-impl TryFrom<Vec<u8>> for JweA256KWEncipher {
-    type Error = JwtError;
-
-    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        if value.len() != KEY_LEN {
-            // Wrong key size.
-            return Err(JwtError::InvalidKey);
-        }
-
-        let mut wrap_key = [0; KEY_LEN];
-
-        wrap_key.copy_from_slice(&value);
-
-        Ok(JweA256KWEncipher { wrap_key })
-    }
-}
-*/
