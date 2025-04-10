@@ -51,13 +51,15 @@ pub use ms_oapxbc::MsOapxbcSessionKey;
 #[cfg(feature = "hsm-crypto")]
 pub use tpm::JwsTpmSigner;
 
+#[cfg(test)]
 impl JwsCompact {
-    #[cfg(test)]
     fn check_vectors(&self, chk_input: &[u8], chk_sig: &[u8]) -> bool {
         let sign_input = format!("{}.{}", self.hdr_b64, self.payload_b64);
         chk_input == sign_input.as_bytes() && chk_sig == &self.signature
     }
+}
 
+impl JwsCompact {
     /// The chain starts from the signing leaf and proceeds up the ca chain
     /// toward the root.
     ///
@@ -104,6 +106,7 @@ impl JweEnc {
     }
 }
 
+/*
 impl JweCompact {
     #[cfg(test)]
     fn check_vectors(
@@ -119,3 +122,4 @@ impl JweCompact {
             && chk_aad == &self.authentication_tag
     }
 }
+*/
