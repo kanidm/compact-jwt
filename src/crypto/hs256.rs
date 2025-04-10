@@ -193,7 +193,7 @@ impl JwsVerifier for JwsHs256Signer {
 }
 
 fn kid(skey: &HmacSha256Key) -> String {
-    let mut hmac = HmacSha256::new(&skey);
+    let mut hmac = HmacSha256::new(skey);
     hmac.update(b"key identifier");
     let hashout = hmac.finalize();
     let mut kid = hex::encode(hashout.into_bytes());

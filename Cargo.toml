@@ -6,7 +6,7 @@ authors = ["William Brown <william@blackhats.net.au>"]
 description = "Minimal implementation of JWT for OIDC and other applications"
 repository = "https://github.com/kanidm/compact-jwt"
 readme = "README.md"
-keywords = ["jwt", "authentication"]
+keywords = ["jwt", "authentication", "jwe", "jws"]
 categories = ["authentication", "web-programming"]
 license = "MPL-2.0"
 
@@ -45,3 +45,6 @@ hex = "0.4"
 
 [dev-dependencies]
 tracing-subscriber = "^0.3.11"
+
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
