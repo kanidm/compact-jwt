@@ -4,13 +4,12 @@ use crate::compact::{JweAlg, JweCompact, JweEnc, JweProtectedHeader, ProtectedHe
 use crate::jwe::Jwe;
 use crate::traits::*;
 use crate::JwtError;
-
 use base64::{engine::general_purpose, Engine as _};
-
 use crypto_glue::{
     aes256::{self, Aes256Key},
     aes256cbc::{block_padding, Aes256CbcDec, Aes256CbcIv, BlockDecryptMut, KeyIvInit},
     rand::{self, Rng},
+    traits::Zeroizing,
 };
 use kanidm_hsm_crypto::{
     provider::{
@@ -104,12 +103,7 @@ impl MsOapxbcSessionKey {
                             JwtError::TpmError
                         })?;
 
-                nist_sp800_108_kdf_hmac_sha256(
-                    &aes_key,
-                    &ctx_bytes,
-                    AAD_KDF_LABEL,
-                    aes256::key_size(),
-                )?
+                nist_sp800_108_kdf_hmac_sha256(&aes_key, &ctx_bytes, AAD_KDF_LABEL)?
             }
         };
 
@@ -263,7 +257,7 @@ impl MsOapxbcSessionKey {
                             JwtError::TpmError
                         })?;
 
-                nist_sp800_108_kdf_hmac_sha256(&aes_key, &nonce, AAD_KDF_LABEL, aes256::key_size())?
+                nist_sp800_108_kdf_hmac_sha256(&aes_key, &nonce, AAD_KDF_LABEL)?
             }
         };
 
@@ -299,12 +293,7 @@ impl MsOapxbcSessionKey {
                                 JwtError::TpmError
                             })?;
 
-                    nist_sp800_108_kdf_hmac_sha256(
-                        aes_key.as_ref(),
-                        &ctx_bytes,
-                        AAD_KDF_LABEL,
-                        aes256::key_size(),
-                    )?
+                    nist_sp800_108_kdf_hmac_sha256(aes_key.as_ref(), &ctx_bytes, AAD_KDF_LABEL)?
                 }
             };
 
@@ -384,22 +373,15 @@ pub(crate) fn nist_sp800_108_kdf_hmac_sha256(
     key: &[u8],
     ctx: &[u8],
     label: &[u8],
-    derive_len: usize,
-) -> Result<Vec<u8>, JwtError> {
-    use openssl::hash::MessageDigest;
-    use openssl_kdf::{perform_kdf, KdfArgument, KdfKbMode, KdfMacType, KdfType};
+) -> Result<Zeroizing<Vec<u8>>, JwtError> {
+    let derived_key =
+        crypto_glue::nist_sp800_108_kdf_hmac_sha256::derive_key_aes256(key, label, ctx)
+            .ok_or_else(|| {
+                debug!("invalid aes key length");
+                JwtError::CryptoError
+            })?;
 
-    let args = [
-        &KdfArgument::KbMode(KdfKbMode::Counter),
-        &KdfArgument::Mac(KdfMacType::Hmac(MessageDigest::sha256())),
-        &KdfArgument::Salt(label),
-        &KdfArgument::KbInfo(ctx),
-        &KdfArgument::Key(key),
-    ];
-    perform_kdf(KdfType::KeyBased, &args, derive_len).map_err(|ossl_err| {
-        error!(?ossl_err, "Unable to derive session key");
-        JwtError::OpenSSLError
-    })
+    Ok(derived_key)
 }
 
 #[cfg(test)]
@@ -421,7 +403,7 @@ mod tests {
     use crate::JwtError;
     use base64::{engine::general_purpose, Engine as _};
     use crypto_glue::{
-        aes256::{self, Aes256Key},
+        aes256::Aes256Key,
         rsa::{RS256PrivateKey, RS256PublicKey},
         traits::Pkcs1DecodeRsaPrivateKey,
     };
@@ -491,7 +473,6 @@ mod tests {
                     self.aes_key.as_slice(),
                     &ctx_bytes,
                     AAD_KDF_LABEL,
-                    aes256::key_size(),
                 )?;
 
                 JwsHs256Signer::try_from(derived_key.as_slice())?

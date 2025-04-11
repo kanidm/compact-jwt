@@ -134,14 +134,12 @@ impl JweEcdhEsA256KWDecipher {
                 let encoded_point =
                     EcdhP256PublicEncodedPoint::from_affine_coordinates(&field_x, &field_y, false);
 
-                let pub_key = EcdhP256PublicKey::from_encoded_point(&encoded_point)
+                EcdhP256PublicKey::from_encoded_point(&encoded_point)
                     .into_option()
                     .ok_or_else(|| {
                         debug!("invalid encoded point");
                         JwtError::CryptoError
-                    })?;
-
-                pub_key
+                    })?
             }
             _ => {
                 error!("Invalid JWK in epk");
