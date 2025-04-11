@@ -3,7 +3,6 @@ use crate::jwe::Jwe;
 use crate::traits::*;
 use crate::JwtError;
 use base64::{engine::general_purpose, Engine as _};
-
 use crypto_glue::{
     aes256::{self, Aes256Key},
     aes256gcm::{self, Aes256Gcm, Aes256GcmNonce, Aes256GcmTag},
@@ -19,7 +18,7 @@ pub struct JweA256GCMEncipher {
 #[cfg(all(test, feature = "msextensions"))]
 impl JweA256GCMEncipher {
     pub(crate) fn raw_key(&self) -> Aes256Key {
-        self.aes_key
+        self.aes_key.clone()
     }
 }
 

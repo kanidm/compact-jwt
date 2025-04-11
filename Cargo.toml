@@ -13,7 +13,7 @@ license = "MPL-2.0"
 [features]
 unsafe_release_without_verify = []
 hsm-crypto = ["kanidm-hsm-crypto"]
-msextensions = ["dep:openssl-kdf", "openssl"]
+msextensions = ["dep:openssl-kdf", "openssl", "kanidm-hsm-crypto"]
 default = ["openssl"]
 
 [package.metadata.docs.rs]
