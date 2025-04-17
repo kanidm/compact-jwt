@@ -1,14 +1,14 @@
 //! JWS Signing and Verification Structures
 
-use crate::compact::JwaAlg;
+// use crate::compact::JwaAlg;
+
 use crate::error::JwtError;
 use crate::traits::*;
+use crate::KID_LEN;
 use crypto_glue::{
-    x509::{
-        Certificate,
-        X509Store,
-        x509_verify_signature
-    },
+    s256,
+    traits::Digest,
+    x509::{x509_verify_signature, Certificate, SubjectKeyIdentifier, X509Store},
 };
 use std::time::SystemTime;
 
@@ -22,10 +22,7 @@ pub struct JwsX509VerifierBuilder {
 
 impl JwsX509VerifierBuilder {
     /// Create a new X509 Verifier Builder. You must pass in the fullchain
-    pub fn new(
-        leaf: &Certificate,
-        chain: &[Certificate],
-    ) -> Self {
+    pub fn new(leaf: &Certificate, chain: &[Certificate]) -> Self {
         JwsX509VerifierBuilder {
             kid: None,
             leaf: leaf.clone(),
@@ -49,18 +46,21 @@ impl JwsX509VerifierBuilder {
 
     /// Build this X509 Verifier.
     pub fn build(self, current_time: SystemTime) -> Result<JwsX509Verifier, JwtError> {
+        let ca_store = X509Store::new(self.trust_roots.as_slice());
 
-        let ca_store = X509Store::new(
-            self.trust_roots.as_slice()
-        );
-
-        ca_store.verify(&self.leaf, &self.chain, current_time)
+        ca_store
+            .verify(&self.leaf, self.chain.as_slice(), current_time)
             .map_err(|err| {
                 error!(?err, "error during chain verification");
                 JwtError::X5cChainNotTrusted
             })?;
 
-        Ok(JwsX509Verifier { kid, pkey: self.leaf })
+        let kid = certificate_to_kid(&self.leaf);
+
+        Ok(JwsX509Verifier {
+            kid,
+            pkey: self.leaf,
+        })
     }
 }
 
@@ -81,9 +81,12 @@ impl JwsX509Verifier {
     /// any verification of the trust chain in the x5c attribute. If possible, you should use
     /// [JwsX509VerifierBuilder] instead.
     pub fn from_x509(certificate: Certificate) -> Result<Self, JwtError> {
-        // let kid = pkey
+        let kid = certificate_to_kid(&certificate);
 
-        Ok(JwsX509Verifier { kid, pkey: certificate })
+        Ok(JwsX509Verifier {
+            kid,
+            pkey: certificate,
+        })
     }
 }
 
@@ -95,23 +98,46 @@ impl JwsVerifier for JwsX509Verifier {
     fn verify<V: JwsVerifiable>(&self, jwsc: &V) -> Result<V::Verified, JwtError> {
         let signed_data = jwsc.data();
 
-        let data = signed_data.hdr_bytes.iter()
-            .chain( b".".into_iter())
-            .chain( signed_data.payload_bytes.iter())
+        let data = signed_data
+            .hdr_bytes
+            .iter()
+            .chain(b".".into_iter())
+            .chain(signed_data.payload_bytes.iter())
             .copied()
             .collect::<Vec<u8>>();
 
-        x509_verify_signature(
-            &data,
-            signed_data.signature_bytes,
-            &self.pkey
-        )
-            .map_err(|err| {
-                debug!(?err, "invalid signature");
-                JwtError::InvalidSignature
-            })?;
+        x509_verify_signature(&data, signed_data.signature_bytes, &self.pkey).map_err(|err| {
+            debug!(?err, "invalid signature");
+            JwtError::InvalidSignature
+        })?;
 
-
-            signed_data.release().and_then(|d| jwsc.post_process(d))
+        signed_data.release().and_then(|d| jwsc.post_process(d))
     }
+}
+
+fn certificate_to_kid(cert: &Certificate) -> String {
+    let maybe_subject_key_id = cert
+        .tbs_certificate
+        .get::<SubjectKeyIdentifier>()
+        .ok()
+        .flatten();
+
+    // Does the cert have a subject key id?
+    let mut kid = if let Some((_, subject_key_id)) = maybe_subject_key_id {
+        hex::encode(subject_key_id.as_ref().as_bytes())
+    } else {
+        let pub_key = &cert
+            .tbs_certificate
+            .subject_public_key_info
+            .subject_public_key;
+
+        // If not, hash the publickey
+        let mut hasher = s256::Sha256::new();
+        hasher.update(pub_key.raw_bytes());
+        let hashout = hasher.finalize();
+        hex::encode(hashout)
+    };
+    kid.truncate(KID_LEN);
+
+    kid
 }

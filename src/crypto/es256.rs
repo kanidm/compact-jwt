@@ -407,7 +407,8 @@ impl JwsVerifier for JwsEs256Verifier {
             return Err(JwtError::ValidatorAlgMismatch);
         }
 
-        let signature = EcdsaP256Signature::from_slice(signed_data.signature_bytes).map_err(|err| {
+        let signature =
+            EcdsaP256Signature::from_slice(signed_data.signature_bytes).map_err(|err| {
                 debug!(?err, "invalid signature length");
                 JwtError::InvalidSignature
             })?;

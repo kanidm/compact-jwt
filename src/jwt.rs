@@ -196,6 +196,7 @@ impl fmt::Display for JwtSigned {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::Jwt;
     use crate::crypto::JwsHs256Signer;

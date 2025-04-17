@@ -5,11 +5,7 @@ use base64::{engine::general_purpose, Engine as _};
 
 use crate::compact::{JweCompact, JweEnc, JwsCompact};
 
-use crypto_glue::{
-    aes256::Aes256Key,
-    x509::Certificate,
-    traits::DecodeDer,
-};
+use crypto_glue::{aes256::Aes256Key, traits::DecodeDer, x509::Certificate};
 
 // JWS types
 mod es256;
