@@ -11,6 +11,7 @@ use crypto_glue::{aes256::Aes256Key, traits::DecodeDer, x509::Certificate};
 mod es256;
 mod hs256;
 mod rs256;
+mod tpm_es256;
 mod x509;
 
 // JWE types
@@ -19,8 +20,6 @@ mod a256kw;
 mod ecdhes_a256kw;
 mod rsaes_oaep;
 
-#[cfg(feature = "hsm-crypto")]
-mod tpm_es256;
 
 #[cfg(feature = "msextensions")]
 mod ms_oapxbc;
@@ -38,7 +37,6 @@ pub use rsaes_oaep::{JweRSAOAEPDecipher, JweRSAOAEPEncipher};
 #[cfg(feature = "msextensions")]
 pub use ms_oapxbc::MsOapxbcSessionKey;
 
-#[cfg(feature = "hsm-crypto")]
 pub use tpm_es256::JwsTpmEs256Signer;
 
 #[cfg(test)]

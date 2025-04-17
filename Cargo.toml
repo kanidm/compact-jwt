@@ -12,7 +12,6 @@ license = "MPL-2.0"
 
 [features]
 unsafe_release_without_verify = []
-hsm-crypto = ["kanidm-hsm-crypto"]
 msextensions = []
 default = []
 
@@ -21,7 +20,7 @@ all-features = true
 
 [patch.crates-io]
 # kanidm-hsm-crypto = { path = "../hsm-crypto" }
-crypto-glue = { path = "../crypto-glue" }
+# crypto-glue = { path = "../crypto-glue" }
 
 [dependencies]
 serde = { version = "^1.0.136", features = ["derive"] }
@@ -30,7 +29,7 @@ base64 = "^0.21.5"
 base64urlsafedata = "^0.5.1"
 
 crypto-glue = "^0.1.3"
-kanidm-hsm-crypto = { version = "0.3.1", optional = true }
+kanidm-hsm-crypto = "0.3.1"
 
 url = { version = "^2.2.2", features = ["serde"] }
 uuid = { version = "^1.0.0", features = ["serde"] }

@@ -26,7 +26,7 @@ impl JwsX509VerifierBuilder {
         JwsX509VerifierBuilder {
             kid: None,
             leaf: leaf.clone(),
-            chain: chain.iter().cloned().collect(),
+            chain: chain.to_vec(),
             trust_roots: Vec::new(),
         }
     }
@@ -55,7 +55,7 @@ impl JwsX509VerifierBuilder {
                 JwtError::X5cChainNotTrusted
             })?;
 
-        let kid = certificate_to_kid(&self.leaf);
+        let kid = self.kid.unwrap_or_else(|| certificate_to_kid(&self.leaf));
 
         Ok(JwsX509Verifier {
             kid,
@@ -101,7 +101,7 @@ impl JwsVerifier for JwsX509Verifier {
         let data = signed_data
             .hdr_bytes
             .iter()
-            .chain(b".".into_iter())
+            .chain(b".".iter())
             .chain(signed_data.payload_bytes.iter())
             .copied()
             .collect::<Vec<u8>>();

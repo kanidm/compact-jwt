@@ -164,7 +164,7 @@ mod tests {
     use crypto_glue::{traits::DecodePem, x509::Certificate};
     use serde::{Deserialize, Serialize};
     use std::convert::TryFrom;
-    use std::time::SystemTime;
+    use std::time::{Duration, SystemTime};
 
     #[derive(Default, Debug, Serialize, Clone, Deserialize, PartialEq)]
     struct CustomExtension {
@@ -280,7 +280,7 @@ HMUfpIBvFSDJ3gyICh3WZlXi/EjJKSZp4A==
         let leaf = &certs[0];
         let inter = &certs[1..];
 
-        let current_time = SystemTime::now();
+        let current_time = SystemTime::UNIX_EPOCH + Duration::from_secs(1655586820);
 
         let jws_x509_verifier = JwsX509VerifierBuilder::new(leaf, inter)
             .add_trust_root(trust_root)

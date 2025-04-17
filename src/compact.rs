@@ -1,4 +1,4 @@
-//!
+//! Compact serialisation formats
 use base64::{engine::general_purpose, Engine as _};
 
 use serde::{Deserialize, Serialize};
@@ -256,7 +256,7 @@ impl Serialize for JwsCompact {
 
 struct JwsCompactVisitor;
 
-impl<'de> serde::de::Visitor<'de> for JwsCompactVisitor {
+impl serde::de::Visitor<'_> for JwsCompactVisitor {
     type Value = JwsCompact;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -318,8 +318,7 @@ pub struct JwsCompactVerifyData<'a> {
     pub(crate) signature_bytes: &'a [u8],
 }
 
-#[cfg(any(test, feature = "unsafe_release_without_verify"))]
-impl<'a> JwsCompactVerifyData<'a> {
+impl JwsCompactVerifyData<'_> {
     pub(crate) fn release(&self) -> Result<Jws, JwtError> {
         general_purpose::URL_SAFE_NO_PAD
             .decode(self.payload_bytes)
