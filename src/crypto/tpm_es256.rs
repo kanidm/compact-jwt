@@ -35,7 +35,7 @@ where
     }
 }
 
-impl<'a, T> JwsMutSigner for JwsTpmEs256Signer<'a, T>
+impl<T> JwsMutSigner for JwsTpmEs256Signer<'_, T>
 where
     T: Tpm + TpmES256,
 {
