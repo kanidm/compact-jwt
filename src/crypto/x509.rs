@@ -3,9 +3,14 @@
 use crate::compact::JwaAlg;
 use crate::error::JwtError;
 use crate::traits::*;
-
-use crypto_glue::x509::chain::X509Store;
-use crypto_glue::x509::Certificate;
+use crypto_glue::{
+    x509::{
+        Certificate,
+        X509Store,
+        x509_verify_signature
+    },
+};
+use std::time::SystemTime;
 
 /// A builder for a verifier that will be rooted in a trusted ca chain.
 pub struct JwsX509VerifierBuilder {
@@ -45,7 +50,7 @@ impl JwsX509VerifierBuilder {
     /// Build this X509 Verifier.
     pub fn build(self, current_time: SystemTime) -> Result<JwsX509Verifier, JwtError> {
 
-        let store = X509Store::new(
+        let ca_store = X509Store::new(
             self.trust_roots.as_slice()
         );
 
@@ -78,7 +83,7 @@ impl JwsX509Verifier {
     pub fn from_x509(certificate: Certificate) -> Result<Self, JwtError> {
         // let kid = pkey
 
-        Ok(JwsX509Verifier { kid, pkey })
+        Ok(JwsX509Verifier { kid, pkey: certificate })
     }
 }
 
@@ -90,64 +95,23 @@ impl JwsVerifier for JwsX509Verifier {
     fn verify<V: JwsVerifiable>(&self, jwsc: &V) -> Result<V::Verified, JwtError> {
         let signed_data = jwsc.data();
 
-        verifier
-            .update(signed_data.hdr_bytes)
-            .and_then(|_| verifier.update(".".as_bytes()))
-            .and_then(|_| verifier.update(signed_data.payload_bytes))
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
+        let data = signed_data.hdr_bytes.iter()
+            .chain( b".".into_iter())
+            .chain( signed_data.payload_bytes.iter())
+            .copied()
+            .collect::<Vec<u8>>();
+
+        x509_verify_signature(
+            &data,
+            signed_data.signature_bytes,
+            &self.pkey
+        )
+            .map_err(|err| {
+                debug!(?err, "invalid signature");
+                JwtError::InvalidSignature
             })?;
 
 
-
-        let valid = verifier.verify(signed_data.signature_bytes).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-
-        if valid {
-        } else {
-            debug!("invalid signature");
-            Err(JwtError::InvalidSignature)
-        }
-
-        let subject_public_key_info = self.leaf
-            .tbs_certificate
-            .subject_public_key_info
-            .owned_to_ref();
-
-        match certificate.tbs_certificate.signature.oid {
-            oiddb::rfc5912::ECDSA_WITH_SHA_256 => {
-                let signature = EcdsaP256DerSignature::try_from(signature)
-                    .map_err(|_err| X509VerificationError::DerSignatureInvalid)?;
-
-                let verifier = EcdsaP256PublicKey::try_from(subject_public_key_info)
-                    .map(EcdsaP256VerifyingKey::from)
-                    .map_err(|_err| X509VerificationError::VerifyingKeyFromSpki)?;
-
-                verifier
-                    .verify(data, &signature)
-                    .map_err(|_err| X509VerificationError::SignatureVerificationFailed)?;
-            }
-            oiddb::rfc5912::SHA_256_WITH_RSA_ENCRYPTION => {
-                let signature = RS256Signature::try_from(signature)
-                    .map_err(|_err| X509VerificationError::DerSignatureInvalid)?;
-
-                let verifier = RS256PublicKey::try_from(subject_public_key_info)
-                    .map(RS256VerifyingKey::new)
-                    .map_err(|_err| X509VerificationError::VerifyingKeyFromSpki)?;
-
-                verifier
-                    .verify(data, &signature)
-                    .map_err(|_err| X509VerificationError::SignatureVerificationFailed)?;
-            }
-            algo_oid => {
-                error!(?algo_oid);
-                return Err(X509VerificationError::SignatureAlgorithmNotImplemented);
-            }
-        };
-
-        signed_data.release().and_then(|d| jwsc.post_process(d))
+            signed_data.release().and_then(|d| jwsc.post_process(d))
     }
 }

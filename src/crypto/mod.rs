@@ -2,11 +2,14 @@
 
 use crate::error::JwtError;
 use base64::{engine::general_purpose, Engine as _};
-use openssl::x509::X509;
 
 use crate::compact::{JweCompact, JweEnc, JwsCompact};
 
-use crypto_glue::aes256::Aes256Key;
+use crypto_glue::{
+    aes256::Aes256Key,
+    x509::Certificate,
+    traits::DecodeDer,
+};
 
 // JWS types
 mod es256;
@@ -55,7 +58,7 @@ impl JwsCompact {
     /// toward the root.
     ///
     /// return [Ok(None)] if the jws object's header's x5c field isn't populated
-    pub fn get_x5c_chain(&self) -> Result<Option<Vec<X509>>, JwtError> {
+    pub fn get_x5c_chain(&self) -> Result<Option<Vec<Certificate>>, JwtError> {
         let Some(fullchain) = &self.header.x5c else {
             return Ok(None);
         };
@@ -67,9 +70,9 @@ impl JwsCompact {
                     .decode(value)
                     .map_err(|_| JwtError::InvalidBase64)
                     .and_then(|bytes| {
-                        X509::from_der(&bytes).map_err(|e| {
+                        Certificate::from_der(&bytes).map_err(|e| {
                             debug!(?e);
-                            JwtError::OpenSSLError
+                            JwtError::CryptoError
                         })
                     })
             })

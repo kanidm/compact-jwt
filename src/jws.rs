@@ -160,9 +160,13 @@ mod tests {
     use crate::compact::JwaAlg;
     use crate::crypto::{JwsEs256Signer, JwsEs256Verifier, JwsHs256Signer, JwsX509VerifierBuilder};
     use crate::traits::*;
-    use openssl::x509;
     use serde::{Deserialize, Serialize};
     use std::convert::TryFrom;
+    use std::time::SystemTime;
+    use crypto_glue::{
+        x509::Certificate,
+        traits::DecodePem
+    };
 
     #[derive(Default, Debug, Serialize, Clone, Deserialize, PartialEq)]
     struct CustomExtension {
@@ -273,13 +277,18 @@ HMUfpIBvFSDJ3gyICh3WZlXi/EjJKSZp4A==
 
         assert!(certs.len() == 3);
 
-        let trust_root = x509::X509::from_pem(gsr1.as_bytes()).unwrap();
+        let trust_root = Certificate::from_pem(gsr1.as_bytes()).unwrap();
 
-        let jws_x509_verifier = JwsX509VerifierBuilder::new()
+        let leaf = &certs[0];
+        let inter = &certs[1..];
+
+        let current_time = SystemTime::now();
+
+        let jws_x509_verifier = JwsX509VerifierBuilder::new(
+            leaf, inter
+            )
             .add_trust_root(trust_root)
-            .add_fullchain(certs)
-            .yolo()
-            .build()
+            .build(current_time)
             .unwrap();
 
         let _claims: std::collections::BTreeMap<String, serde_json::value::Value> =
