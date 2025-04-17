@@ -26,7 +26,6 @@
 //!
 //! # Examples
 //! ```
-//! # #[cfg(feature = "openssl")]
 //! # {
 //! use std::str::FromStr;
 //! use std::convert::TryFrom;
@@ -99,7 +98,6 @@
 #[macro_use]
 extern crate tracing;
 
-#[cfg(feature = "openssl")]
 pub mod crypto;
 
 #[cfg(feature = "unsafe_release_without_verify")]
@@ -115,7 +113,6 @@ pub mod jws;
 pub mod jwt;
 pub mod oidc;
 
-#[cfg(feature = "openssl")]
 pub use crate::crypto::{JwsEs256Signer, JwsEs256Verifier, JwsHs256Signer};
 
 pub use crate::compact::{JwaAlg, JweCompact, Jwk, JwkKeySet, JwkUse, JwsCompact};

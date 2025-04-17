@@ -155,7 +155,6 @@ impl fmt::Display for JwsSigned {
     }
 }
 
-#[cfg(all(feature = "openssl", test))]
 mod tests {
     use super::JwsBuilder;
     use crate::compact::JwaAlg;

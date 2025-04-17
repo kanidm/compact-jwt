@@ -318,7 +318,7 @@ pub struct JwsCompactVerifyData<'a> {
     pub(crate) signature_bytes: &'a [u8],
 }
 
-#[cfg(any(feature = "unsafe_release_without_verify", feature = "openssl"))]
+#[cfg(any(test, feature = "unsafe_release_without_verify"))]
 impl<'a> JwsCompactVerifyData<'a> {
     pub(crate) fn release(&self) -> Result<Jws, JwtError> {
         general_purpose::URL_SAFE_NO_PAD
