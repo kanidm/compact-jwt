@@ -1,25 +1,34 @@
 //! JWS Signing and Verification Structures
 
-use crate::compact::JwaAlg;
+// use crate::compact::JwaAlg;
+
 use crate::error::JwtError;
 use crate::traits::*;
-use openssl::{hash, pkey, rsa, sign, x509};
+use crate::KID_LEN;
+use crypto_glue::{
+    s256,
+    traits::Digest,
+    x509::{x509_verify_signature, Certificate, SubjectKeyIdentifier, X509Store},
+};
+use std::time::SystemTime;
 
 /// A builder for a verifier that will be rooted in a trusted ca chain.
-#[derive(Default)]
 pub struct JwsX509VerifierBuilder {
     kid: Option<String>,
-    leaf: Option<x509::X509>,
-    chain: Vec<x509::X509>,
-    trust_roots: Vec<x509::X509>,
-    #[cfg(test)]
-    disable_time_checks: bool,
+    leaf: Certificate,
+    chain: Vec<Certificate>,
+    trust_roots: Vec<Certificate>,
 }
 
 impl JwsX509VerifierBuilder {
-    /// Create a new X509 Verifier Builder
-    pub fn new() -> Self {
-        JwsX509VerifierBuilder::default()
+    /// Create a new X509 Verifier Builder. You must pass in the fullchain
+    pub fn new(leaf: &Certificate, chain: &[Certificate]) -> Self {
+        JwsX509VerifierBuilder {
+            kid: None,
+            leaf: leaf.clone(),
+            chain: chain.to_vec(),
+            trust_roots: Vec::new(),
+        }
     }
 
     #[cfg(test)]
@@ -30,138 +39,28 @@ impl JwsX509VerifierBuilder {
     }
 
     /// Add the CA trust roots that you trust to anchor signature chains.
-    pub fn add_trust_root(mut self, root: x509::X509) -> Self {
-        self.trust_roots.push(root);
-        self
-    }
-
-    #[cfg(test)]
-    pub(crate) fn yolo(mut self) -> Self {
-        self.disable_time_checks = true;
-        self
-    }
-
-    /// Add the full chain of certificates to this verifier. The expected
-    /// Vec should start with the leaf certificate, and end with the root.
-    ///
-    /// By default, the x5c content of a Jws should have this in the correct
-    /// order.
-    pub fn add_fullchain(mut self, mut chain: Vec<x509::X509>) -> Self {
-        // Normally the chains are leaf -> root. We need to reverse it
-        // so we can pop from the right.
-        chain.reverse();
-
-        // Now we can pop() which gives us the leaf
-        // If there is no leaf, we'll error in the build phase.
-        self.leaf = chain.pop();
-        self.chain = chain;
+    pub fn add_trust_root(mut self, ca_root: Certificate) -> Self {
+        self.trust_roots.push(ca_root);
         self
     }
 
     /// Build this X509 Verifier.
-    pub fn build(self) -> Result<JwsX509Verifier, JwtError> {
-        use openssl::stack;
-        use openssl::x509::store;
+    pub fn build(self, current_time: SystemTime) -> Result<JwsX509Verifier, JwtError> {
+        let ca_store = X509Store::new(self.trust_roots.as_slice());
 
-        let JwsX509VerifierBuilder {
+        ca_store
+            .verify(&self.leaf, self.chain.as_slice(), current_time)
+            .map_err(|err| {
+                error!(?err, "error during chain verification");
+                JwtError::X5cChainNotTrusted
+            })?;
+
+        let kid = self.kid.unwrap_or_else(|| certificate_to_kid(&self.leaf));
+
+        Ok(JwsX509Verifier {
             kid,
-            leaf,
-            mut chain,
-            mut trust_roots,
-            #[cfg(test)]
-            disable_time_checks,
-        } = self;
-
-        let leaf = leaf.ok_or_else(|| {
-            error!("No leaf certificate available in chain");
-            JwtError::X5cChainMissingLeaf
-        })?;
-
-        // Now verify the whole thing back to the trust roots.
-
-        // Convert the chain to a stackref for openssl.
-        let mut chain_stack = stack::Stack::new().map_err(|ossl_err| {
-            error!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
-        while let Some(crt) = chain.pop() {
-            chain_stack.push(crt).map_err(|ossl_err| {
-                error!(?ossl_err);
-                JwtError::OpenSSLError
-            })?;
-        }
-
-        // Setup a CA store we plan to verify against.
-        let mut ca_store = store::X509StoreBuilder::new().map_err(|ossl_err| {
-            error!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
-        while let Some(ca_crt) = trust_roots.pop() {
-            ca_store.add_cert(ca_crt).map_err(|ossl_err| {
-                error!(?ossl_err);
-                JwtError::OpenSSLError
-            })?;
-        }
-
-        #[cfg(test)]
-        if disable_time_checks {
-            ca_store
-                .set_flags(x509::verify::X509VerifyFlags::NO_CHECK_TIME)
-                .map_err(|ossl_err| {
-                    error!(?ossl_err);
-                    JwtError::OpenSSLError
-                })?;
-        }
-
-        let ca_store = ca_store.build();
-
-        let mut ca_ctx = x509::X509StoreContext::new().map_err(|ossl_err| {
-            error!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
-        let out = ca_ctx
-            .init(&ca_store, &leaf, &chain_stack, |ca_ctx_ref| {
-                ca_ctx_ref.verify_cert().map(|_| {
-                    let verify_cert_result = ca_ctx_ref.error();
-                    trace!(?verify_cert_result);
-                    if verify_cert_result == x509::X509VerifyResult::OK {
-                        Ok(())
-                    } else {
-                        error!(
-                            "ca_ctx_ref verify cert - error depth={}, sn={:?}",
-                            ca_ctx_ref.error_depth(),
-                            ca_ctx_ref.current_cert().map(|crt| crt.subject_name())
-                        );
-                        Err(JwtError::X5cChainNotTrusted)
-                    }
-                })
-            })
-            .map_err(|ossl_err| {
-                error!(?ossl_err);
-                JwtError::OpenSSLError
-            })?;
-
-        trace!(?out);
-
-        let digest = hash::MessageDigest::sha256();
-
-        let kid = if let Some(kid) = kid {
-            kid
-        } else {
-            leaf.public_key()
-                .and_then(|pkey| pkey.public_key_to_der())
-                .and_then(|der| hash::hash(digest, &der))
-                .map(hex::encode)
-                .map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })?
-        };
-
-        out.map(|()| JwsX509Verifier { kid, pkey: leaf })
+            pkey: self.leaf,
+        })
     }
 }
 
@@ -174,26 +73,20 @@ pub struct JwsX509Verifier {
     /// The KID of this validator
     kid: String,
     /// Public Key
-    pkey: x509::X509,
+    pkey: Certificate,
 }
 
 impl JwsX509Verifier {
     /// Create a new Jws Verifier directly from an x509 certificate. Note that this bypasses
     /// any verification of the trust chain in the x5c attribute. If possible, you should use
     /// [JwsX509VerifierBuilder] instead.
-    pub fn from_x509(pkey: x509::X509) -> Result<Self, JwtError> {
-        let digest = hash::MessageDigest::sha256();
-        let kid = pkey
-            .public_key()
-            .and_then(|pkey| pkey.public_key_to_der())
-            .and_then(|der| hash::hash(digest, &der))
-            .map(hex::encode)
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
-            })?;
+    pub fn from_x509(certificate: Certificate) -> Result<Self, JwtError> {
+        let kid = certificate_to_kid(&certificate);
 
-        Ok(JwsX509Verifier { kid, pkey })
+        Ok(JwsX509Verifier {
+            kid,
+            pkey: certificate,
+        })
     }
 }
 
@@ -205,53 +98,46 @@ impl JwsVerifier for JwsX509Verifier {
     fn verify<V: JwsVerifiable>(&self, jwsc: &V) -> Result<V::Verified, JwtError> {
         let signed_data = jwsc.data();
 
-        let pkey = self.pkey.public_key().map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
+        let data = signed_data
+            .hdr_bytes
+            .iter()
+            .chain(b".".iter())
+            .chain(signed_data.payload_bytes.iter())
+            .copied()
+            .collect::<Vec<u8>>();
+
+        x509_verify_signature(&data, signed_data.signature_bytes, &self.pkey).map_err(|err| {
+            debug!(?err, "invalid signature");
+            JwtError::InvalidSignature
         })?;
 
-        // Okay, the cert is valid, lets do this.
-        let digest = match (signed_data.header.alg, pkey.id()) {
-            (JwaAlg::RS256, pkey::Id::RSA) | (JwaAlg::ES256, pkey::Id::EC) => {
-                Ok(hash::MessageDigest::sha256())
-            }
-            _ => {
-                debug!(jwsc_alg = ?signed_data.header.alg, "validator algorithm mismatch");
-                return Err(JwtError::ValidatorAlgMismatch);
-            }
-        }?;
-
-        let mut verifier = sign::Verifier::new(digest, &pkey).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-
-        if signed_data.header.alg == JwaAlg::RS256 {
-            verifier.set_rsa_padding(rsa::Padding::PKCS1).map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
-            })?;
-        }
-
-        verifier
-            .update(signed_data.hdr_bytes)
-            .and_then(|_| verifier.update(".".as_bytes()))
-            .and_then(|_| verifier.update(signed_data.payload_bytes))
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
-            })?;
-
-        let valid = verifier.verify(signed_data.signature_bytes).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-
-        if valid {
-            signed_data.release().and_then(|d| jwsc.post_process(d))
-        } else {
-            debug!("invalid signature");
-            Err(JwtError::InvalidSignature)
-        }
+        signed_data.release().and_then(|d| jwsc.post_process(d))
     }
+}
+
+fn certificate_to_kid(cert: &Certificate) -> String {
+    let maybe_subject_key_id = cert
+        .tbs_certificate
+        .get::<SubjectKeyIdentifier>()
+        .ok()
+        .flatten();
+
+    // Does the cert have a subject key id?
+    let mut kid = if let Some((_, subject_key_id)) = maybe_subject_key_id {
+        hex::encode(subject_key_id.as_ref().as_bytes())
+    } else {
+        let pub_key = &cert
+            .tbs_certificate
+            .subject_public_key_info
+            .subject_public_key;
+
+        // If not, hash the publickey
+        let mut hasher = s256::Sha256::new();
+        hasher.update(pub_key.raw_bytes());
+        let hashout = hasher.finalize();
+        hex::encode(hashout)
+    };
+    kid.truncate(KID_LEN);
+
+    kid
 }

@@ -37,8 +37,7 @@ There are already many other libraries for JWT on crates.io however they each ha
 or design that conflicts with the project goals in Kanidm. Examples are:
 
 * Incorrect Implementations - There are a number of JWT libraries in Rust that are incorrect to the RFC or do not have RFC vector tests
-* Ring as the sole cryptographic provider - we need to use OpenSSL
-* Only supporting RSA/Weak cryptographic algos - We want to use ECDSA
+* Only supporting RSA/Weak cryptographic algos - We want to use ECDSA and modern cryptography
 * Full JWS implementation - As mentioned, JWS has a number of sharp edges like alg=none
 * No library supports pkcs11 or TPMS - We aim to allow hardware security modules to store private keys
 

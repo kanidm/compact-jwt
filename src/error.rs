@@ -22,6 +22,8 @@ pub enum JwtError {
     CriticalExtension,
     /// OpenSSL failure
     OpenSSLError,
+    /// Cryptographic Failure
+    CryptoError,
     /// Tpm Failure
     TpmError,
     /// Incorrect Algorithm for verification

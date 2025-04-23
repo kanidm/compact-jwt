@@ -1,19 +1,31 @@
+use super::a256gcm::JweA256GCMEncipher;
+use super::hs256::JwsHs256Signer;
 use crate::compact::{JweAlg, JweCompact, JweEnc, JweProtectedHeader, ProtectedHeader};
 use crate::jwe::Jwe;
-use crate::JwtError;
-
 use crate::traits::*;
-
-use super::a256gcm::{JweA256GCMEncipher, KEY_LEN as A256_KEY_LEN};
-use super::hs256::JwsHs256Signer;
-
-use openssl::hash::MessageDigest;
-use openssl::rand;
-use openssl::symm::Cipher;
-
+use crate::JwtError;
 use base64::{engine::general_purpose, Engine as _};
-
-use kanidm_hsm_crypto::{LoadableMsOapxbcSessionKey, MsOapxbcRsaKey, Tpm};
+use crypto_glue::{
+    aes256::{self, Aes256Key},
+    aes256cbc::{block_padding, Aes256CbcDec, Aes256CbcIv, BlockDecryptMut, KeyIvInit},
+    rand::{self, Rng},
+    traits::Zeroizing,
+};
+use kanidm_hsm_crypto::{
+    provider::{
+        // Tpm,
+        // TpmRS256,
+        TpmMsExtensions,
+    },
+    structures::{
+        // RS256Key is the equivalent to MsOapxbcRsaKey
+        RS256Key,
+        // SealedData is the equivalent to LoadableMsOapxbcSessionKey
+        SealedData,
+        StorageKey,
+    },
+    // LoadableMsOapxbcSessionKey, MsOapxbcRsaKey, Tpm
+};
 
 const AAD_KDF_LABEL: &[u8; 26] = b"AzureAD-SecureConversation";
 const CTX_NONCE_LEN: usize = 32;
@@ -25,7 +37,7 @@ pub enum MsOapxbcSessionKey {
     /// An AES-256-GCM/CBC + HS256 session key
     A256GCM {
         /// The encrypted session key which can be loaded as required for individual operations
-        loadable_session_key: LoadableMsOapxbcSessionKey,
+        sealed_session_key: SealedData,
     },
 }
 
@@ -33,17 +45,19 @@ impl MsOapxbcSessionKey {
     /// Given a session jwe, complete the session key derivation with this private key
     pub fn complete_tpm_rsa_oaep_key_agreement<T>(
         tpm: &mut T,
-        msrsa_key: &MsOapxbcRsaKey,
+        sealing_key: &StorageKey,
+        msrsa_key: &RS256Key,
         jwec: &JweCompact,
     ) -> Result<Self, JwtError>
     where
-        T: Tpm,
+        T: TpmMsExtensions,
     {
-        let expected_wrap_key_buffer_len = jwec.header.enc.key_len();
+        let expected_wrap_key_buffer_len = aes256::key_size();
 
-        let loadable_session_key = tpm
+        let sealed_session_key = tpm
             .msoapxbc_rsa_decipher_session_key(
                 msrsa_key,
+                sealing_key,
                 &jwec.content_enc_key,
                 expected_wrap_key_buffer_len,
             )
@@ -55,10 +69,8 @@ impl MsOapxbcSessionKey {
         // May also need to make this output type a trait too, so we can store
         // this key in some secure way?
         match jwec.header.enc {
-            JweEnc::A256GCM => Ok(MsOapxbcSessionKey::A256GCM {
-                loadable_session_key,
-            }),
-            _ => Err(JwtError::CipherUnavailable),
+            JweEnc::A256GCM => Ok(MsOapxbcSessionKey::A256GCM { sealed_session_key }),
+            // _ => Err(JwtError::CipherUnavailable),
         }
     }
 }
@@ -68,11 +80,11 @@ impl MsOapxbcSessionKey {
     pub fn decipher_prt_v2<T>(
         &self,
         tpm: &mut T,
-        msrsa_key: &MsOapxbcRsaKey,
+        sealing_key: &StorageKey,
         jwec: &JweCompact,
     ) -> Result<Jwe, JwtError>
     where
-        T: Tpm,
+        T: TpmMsExtensions,
     {
         let ctx_bytes = if let Some(ctx) = &jwec.header.ctx {
             general_purpose::STANDARD
@@ -83,23 +95,35 @@ impl MsOapxbcSessionKey {
         };
 
         let derived_key = match &self {
-            MsOapxbcSessionKey::A256GCM {
-                loadable_session_key,
-            } => {
-                let aes_key = tpm
-                    .msoapxbc_rsa_yield_session_key(msrsa_key, loadable_session_key)
-                    .map_err(|tpm_err| {
-                        error!(?tpm_err);
-                        JwtError::TpmError
-                    })?;
+            MsOapxbcSessionKey::A256GCM { sealed_session_key } => {
+                let aes_key =
+                    tpm.unseal_data(sealing_key, sealed_session_key)
+                        .map_err(|tpm_err| {
+                            error!(?tpm_err);
+                            JwtError::TpmError
+                        })?;
 
-                nist_sp800_108_kdf_hmac_sha256(&aes_key, &ctx_bytes, AAD_KDF_LABEL, A256_KEY_LEN)?
+                nist_sp800_108_kdf_hmac_sha256(&aes_key, &ctx_bytes, AAD_KDF_LABEL)?
             }
         };
 
-        let cipher = Cipher::aes_256_cbc();
-        let payload =
-            super::a128cbc_hs256::decipher(cipher, &derived_key, &jwec.ciphertext, &jwec.iv)?;
+        let derived_aes_key = aes256::key_from_slice(derived_key.as_slice()).ok_or_else(|| {
+            debug!("invalid aes key length");
+            JwtError::CryptoError
+        })?;
+
+        let iv = Aes256CbcIv::from_exact_iter(jwec.iv.iter().copied()).ok_or_else(|| {
+            debug!("invalid aes key length");
+            JwtError::CryptoError
+        })?;
+
+        let dec = Aes256CbcDec::new(&derived_aes_key, &iv);
+        let payload = dec
+            .decrypt_padded_vec_mut::<block_padding::Pkcs7>(&jwec.ciphertext)
+            .map_err(|err| {
+                error!(?err);
+                JwtError::CryptoError
+            })?;
 
         Ok(Jwe {
             header: jwec.header.clone(),
@@ -111,12 +135,11 @@ impl MsOapxbcSessionKey {
     pub fn decipher<T>(
         &self,
         tpm: &mut T,
-        msrsa_key: &MsOapxbcRsaKey,
-
+        sealing_key: &StorageKey,
         jwec: &JweCompact,
     ) -> Result<Jwe, JwtError>
     where
-        T: Tpm,
+        T: TpmMsExtensions,
     {
         // Alg must be direct.
         if jwec.header.alg != JweAlg::DIRECT {
@@ -124,22 +147,25 @@ impl MsOapxbcSessionKey {
         }
 
         match &self {
-            MsOapxbcSessionKey::A256GCM {
-                loadable_session_key,
-            } => {
+            MsOapxbcSessionKey::A256GCM { sealed_session_key } => {
                 // Seems that this can mean AES256GCM or AES256CBC
                 if jwec.header.enc != JweEnc::A256GCM {
                     return Err(JwtError::CipherUnavailable);
                 }
 
-                let aes_key = tpm
-                    .msoapxbc_rsa_yield_session_key(msrsa_key, loadable_session_key)
-                    .map_err(|tpm_err| {
-                        error!(?tpm_err);
-                        JwtError::TpmError
-                    })?;
+                let aes_key =
+                    tpm.unseal_data(sealing_key, sealed_session_key)
+                        .map_err(|tpm_err| {
+                            error!(?tpm_err);
+                            JwtError::TpmError
+                        })?;
 
-                let a256gcm = JweA256GCMEncipher::try_from(aes_key.as_slice())?;
+                let aes_key = aes256::key_from_slice(aes_key.as_slice()).ok_or_else(|| {
+                    debug!("invalid aes key length");
+                    JwtError::CryptoError
+                })?;
+
+                let a256gcm = JweA256GCMEncipher::from(aes_key);
 
                 a256gcm.decipher_inner(jwec).map(|payload| Jwe {
                     header: jwec.header.clone(),
@@ -153,26 +179,29 @@ impl MsOapxbcSessionKey {
     pub fn encipher<T>(
         &self,
         tpm: &mut T,
-        msrsa_key: &MsOapxbcRsaKey,
+        sealing_key: &StorageKey,
         jwe: &Jwe,
     ) -> Result<JweCompact, JwtError>
     where
-        T: Tpm,
+        T: TpmMsExtensions,
     {
         let outer = JweDirect::default();
 
         match &self {
-            MsOapxbcSessionKey::A256GCM {
-                loadable_session_key,
-            } => {
-                let aes_key = tpm
-                    .msoapxbc_rsa_yield_session_key(msrsa_key, loadable_session_key)
-                    .map_err(|tpm_err| {
-                        error!(?tpm_err);
-                        JwtError::TpmError
-                    })?;
+            MsOapxbcSessionKey::A256GCM { sealed_session_key } => {
+                let aes_key =
+                    tpm.unseal_data(sealing_key, sealed_session_key)
+                        .map_err(|tpm_err| {
+                            error!(?tpm_err);
+                            JwtError::TpmError
+                        })?;
 
-                let a256gcm = JweA256GCMEncipher::try_from(aes_key.as_slice())?;
+                let aes_key = aes256::key_from_slice(aes_key.as_slice()).ok_or_else(|| {
+                    debug!("invalid aes key length");
+                    JwtError::CryptoError
+                })?;
+
+                let a256gcm = JweA256GCMEncipher::from(aes_key);
 
                 a256gcm.encipher_inner(&outer, jwe)
             }
@@ -183,22 +212,20 @@ impl MsOapxbcSessionKey {
     pub fn sign_direct<T, V: JwsSignable>(
         &self,
         tpm: &mut T,
-        msrsa_key: &MsOapxbcRsaKey,
+        sealing_key: &StorageKey,
         jws: &V,
     ) -> Result<V::Signed, JwtError>
     where
-        T: Tpm,
+        T: TpmMsExtensions,
     {
         let hmac_key = match self {
-            MsOapxbcSessionKey::A256GCM {
-                loadable_session_key,
-            } => {
-                let aes_key = tpm
-                    .msoapxbc_rsa_yield_session_key(msrsa_key, loadable_session_key)
-                    .map_err(|tpm_err| {
-                        error!(?tpm_err);
-                        JwtError::TpmError
-                    })?;
+            MsOapxbcSessionKey::A256GCM { sealed_session_key } => {
+                let aes_key =
+                    tpm.unseal_data(sealing_key, sealed_session_key)
+                        .map_err(|tpm_err| {
+                            error!(?tpm_err);
+                            JwtError::TpmError
+                        })?;
 
                 JwsHs256Signer::try_from(aes_key.as_slice())?
             }
@@ -210,33 +237,27 @@ impl MsOapxbcSessionKey {
     /// Use the session key to derive a one-time HMAC key for signing this JWS.
     pub fn sign<T, V: JwsSignable>(
         &self,
-
         tpm: &mut T,
-        msrsa_key: &MsOapxbcRsaKey,
-
+        sealing_key: &StorageKey,
         jws: &V,
     ) -> Result<V::Signed, JwtError>
     where
-        T: Tpm,
+        T: TpmMsExtensions,
     {
         let mut nonce = [0; CTX_NONCE_LEN];
-        rand::rand_bytes(&mut nonce).map_err(|e| {
-            error!("{:?}", e);
-            JwtError::OpenSSLError
-        })?;
+        let mut rng = rand::thread_rng();
+        rng.fill(&mut nonce);
 
         let derived_key = match &self {
-            MsOapxbcSessionKey::A256GCM {
-                loadable_session_key,
-            } => {
-                let aes_key = tpm
-                    .msoapxbc_rsa_yield_session_key(msrsa_key, loadable_session_key)
-                    .map_err(|tpm_err| {
-                        error!(?tpm_err);
-                        JwtError::TpmError
-                    })?;
+            MsOapxbcSessionKey::A256GCM { sealed_session_key } => {
+                let aes_key =
+                    tpm.unseal_data(sealing_key, sealed_session_key)
+                        .map_err(|tpm_err| {
+                            error!(?tpm_err);
+                            JwtError::TpmError
+                        })?;
 
-                nist_sp800_108_kdf_hmac_sha256(&aes_key, &nonce, AAD_KDF_LABEL, A256_KEY_LEN)?
+                nist_sp800_108_kdf_hmac_sha256(&aes_key, &nonce, AAD_KDF_LABEL)?
             }
         };
 
@@ -252,11 +273,11 @@ impl MsOapxbcSessionKey {
     pub fn verify<T, V: JwsVerifiable>(
         &self,
         tpm: &mut T,
-        msrsa_key: &MsOapxbcRsaKey,
+        sealing_key: &StorageKey,
         jwsc: &V,
     ) -> Result<V::Verified, JwtError>
     where
-        T: Tpm,
+        T: TpmMsExtensions,
     {
         let hmac_key = if let Some(ctx) = &jwsc.data().header.ctx {
             let ctx_bytes = general_purpose::STANDARD
@@ -264,22 +285,15 @@ impl MsOapxbcSessionKey {
                 .map_err(|_| JwtError::InvalidBase64)?;
 
             let derived_key = match &self {
-                MsOapxbcSessionKey::A256GCM {
-                    loadable_session_key,
-                } => {
-                    let aes_key = tpm
-                        .msoapxbc_rsa_yield_session_key(msrsa_key, loadable_session_key)
-                        .map_err(|tpm_err| {
-                            error!(?tpm_err);
-                            JwtError::TpmError
-                        })?;
+                MsOapxbcSessionKey::A256GCM { sealed_session_key } => {
+                    let aes_key =
+                        tpm.unseal_data(sealing_key, sealed_session_key)
+                            .map_err(|tpm_err| {
+                                error!(?tpm_err);
+                                JwtError::TpmError
+                            })?;
 
-                    nist_sp800_108_kdf_hmac_sha256(
-                        aes_key.as_ref(),
-                        &ctx_bytes,
-                        AAD_KDF_LABEL,
-                        A256_KEY_LEN,
-                    )?
+                    nist_sp800_108_kdf_hmac_sha256(aes_key.as_ref(), &ctx_bytes, AAD_KDF_LABEL)?
                 }
             };
 
@@ -287,15 +301,13 @@ impl MsOapxbcSessionKey {
         } else {
             // Assume direct signature.
             match self {
-                MsOapxbcSessionKey::A256GCM {
-                    loadable_session_key,
-                } => {
-                    let aes_key = tpm
-                        .msoapxbc_rsa_yield_session_key(msrsa_key, loadable_session_key)
-                        .map_err(|tpm_err| {
-                            error!(?tpm_err);
-                            JwtError::TpmError
-                        })?;
+                MsOapxbcSessionKey::A256GCM { sealed_session_key } => {
+                    let aes_key =
+                        tpm.unseal_data(sealing_key, sealed_session_key)
+                            .map_err(|tpm_err| {
+                                error!(?tpm_err);
+                                JwtError::TpmError
+                            })?;
 
                     JwsHs256Signer::try_from(aes_key.as_slice())?
                 }
@@ -309,13 +321,13 @@ impl MsOapxbcSessionKey {
 #[derive(Default)]
 struct JweDirect {}
 
-impl JweEncipherOuter for JweDirect {
+impl JweEncipherOuterA256 for JweDirect {
     fn set_header_alg(&self, hdr: &mut JweProtectedHeader) -> Result<(), JwtError> {
         hdr.alg = JweAlg::DIRECT;
         Ok(())
     }
 
-    fn wrap_key(&self, _key_to_wrap: &[u8]) -> Result<Vec<u8>, JwtError> {
+    fn wrap_key(&self, _key_to_wrap: Aes256Key) -> Result<Vec<u8>, JwtError> {
         Ok(Vec::with_capacity(0))
     }
 }
@@ -361,60 +373,60 @@ pub(crate) fn nist_sp800_108_kdf_hmac_sha256(
     key: &[u8],
     ctx: &[u8],
     label: &[u8],
-    derive_len: usize,
-) -> Result<Vec<u8>, JwtError> {
-    use openssl_kdf::{perform_kdf, KdfArgument, KdfKbMode, KdfMacType, KdfType};
+) -> Result<Zeroizing<Vec<u8>>, JwtError> {
+    let derived_key =
+        crypto_glue::nist_sp800_108_kdf_hmac_sha256::derive_key_aes256(key, label, ctx)
+            .ok_or_else(|| {
+                debug!("invalid aes key length");
+                JwtError::CryptoError
+            })?;
 
-    let args = [
-        &KdfArgument::KbMode(KdfKbMode::Counter),
-        &KdfArgument::Mac(KdfMacType::Hmac(MessageDigest::sha256())),
-        &KdfArgument::Salt(label),
-        &KdfArgument::KbInfo(ctx),
-        &KdfArgument::Key(key),
-    ];
-    perform_kdf(KdfType::KeyBased, &args, derive_len).map_err(|ossl_err| {
-        error!(?ossl_err, "Unable to derive session key");
-        JwtError::OpenSSLError
-    })
+    Ok(derived_key)
 }
 
 #[cfg(test)]
 mod tests {
     use super::MsOapxbcSessionKey;
-    use crate::compact::JweCompact;
-    use crate::jwe::JweBuilder;
-    use crate::jws::JwsBuilder;
-    use base64::{engine::general_purpose, Engine as _};
-    use openssl::rsa::Rsa;
-
-    use std::str::FromStr;
-
-    use kanidm_hsm_crypto::{soft::SoftTpm, AuthValue, BoxedDynTpm, Tpm};
-
     use super::{nist_sp800_108_kdf_hmac_sha256, AAD_KDF_LABEL};
     use crate::compact::JweAlg;
+    use crate::compact::JweCompact;
     use crate::compact::JweEnc;
+    use crate::crypto::hs256::JwsHs256Signer;
     use crate::crypto::ms_oapxbc::JweA256GCMEncipher;
-    use crate::crypto::ms_oapxbc::A256_KEY_LEN;
     use crate::crypto::JweRSAOAEPEncipher;
     use crate::jwe::Jwe;
-    use crate::traits::JweEncipherInner;
+    use crate::jwe::JweBuilder;
+    use crate::jws::JwsBuilder;
+    use crate::traits::JweEncipherInnerA256;
     use crate::traits::JwsVerifiable;
     use crate::traits::JwsVerifier;
     use crate::JwtError;
-    use openssl::pkey::Public;
-
-    use crate::crypto::hs256::JwsHs256Signer;
+    use base64::{engine::general_purpose, Engine as _};
+    use crypto_glue::{
+        aes256::Aes256Key,
+        rsa::{RS256PrivateKey, RS256PublicKey},
+        traits::Pkcs1DecodeRsaPrivateKey,
+    };
+    use kanidm_hsm_crypto::{
+        provider::{
+            // TpmMsExtensions,
+            SoftTpm,
+            Tpm,
+            TpmRS256,
+        },
+        AuthValue,
+    };
+    use std::str::FromStr;
 
     struct MsOapxbcServerKey {
-        aes_key: [u8; A256_KEY_LEN],
+        aes_key: Aes256Key,
     }
 
     impl MsOapxbcServerKey {
         pub fn begin_rsa_oaep_key_agreement(
-            rsa_pub_key: Rsa<Public>,
+            rsa_pub_key: RS256PublicKey,
         ) -> Result<(Self, JweCompact), JwtError> {
-            let rsa_oaep = JweRSAOAEPEncipher::try_from(rsa_pub_key)?;
+            let rsa_oaep = JweRSAOAEPEncipher::from(rsa_pub_key);
 
             let aes_key = JweA256GCMEncipher::new_ephemeral()?;
 
@@ -441,7 +453,7 @@ mod tests {
                 return Err(JwtError::CipherUnavailable);
             }
 
-            let a256gcm = JweA256GCMEncipher::try_from(self.aes_key.as_slice())?;
+            let a256gcm = JweA256GCMEncipher::from(self.aes_key.clone());
 
             a256gcm.decipher_inner(jwec).map(|payload| Jwe {
                 header: jwec.header.clone(),
@@ -458,10 +470,9 @@ mod tests {
                     .map_err(|_| JwtError::InvalidBase64)?;
 
                 let derived_key = nist_sp800_108_kdf_hmac_sha256(
-                    self.aes_key.as_ref(),
+                    self.aes_key.as_slice(),
                     &ctx_bytes,
                     AAD_KDF_LABEL,
-                    A256_KEY_LEN,
                 )?;
 
                 JwsHs256Signer::try_from(derived_key.as_slice())?
@@ -477,29 +488,30 @@ mod tests {
     fn ms_oapxbc_reflexive_encryption_test() {
         let _ = tracing_subscriber::fmt::try_init();
 
-        let mut softtpm: BoxedDynTpm = BoxedDynTpm::new(SoftTpm::new());
+        let mut soft_tpm = SoftTpm::default();
         let auth_value = AuthValue::ephemeral().unwrap();
-        let loadable_machine_key = softtpm.machine_key_create(&auth_value).unwrap();
+        let loadable_storage_key = soft_tpm
+            .root_storage_key_create(&auth_value)
+            .expect("Unable to create new storage key");
 
-        let machine_key = softtpm
-            .machine_key_load(&auth_value, &loadable_machine_key)
+        let root_storage_key = soft_tpm
+            .root_storage_key_load(&auth_value, &loadable_storage_key)
+            .expect("Unable to load storage key");
+
+        let loadable_msrsa_key = soft_tpm.rs256_create(&root_storage_key).unwrap();
+
+        let msrsa_key = soft_tpm
+            .rs256_load(&root_storage_key, &loadable_msrsa_key)
             .unwrap();
 
-        let loadable_msrsa_key = softtpm.msoapxbc_rsa_key_create(&machine_key).unwrap();
-
-        let msrsa_key = softtpm
-            .msoapxbc_rsa_key_load(&machine_key, &loadable_msrsa_key)
-            .unwrap();
-
-        let msrsa_public_key_der = softtpm.msoapxbc_rsa_public_as_der(&msrsa_key).unwrap();
-
-        let rsa_pub_key = Rsa::public_key_from_der(&msrsa_public_key_der).unwrap();
+        let rsa_pub_key = soft_tpm.rs256_public(&msrsa_key).unwrap();
 
         let (server_key, jwec) =
             MsOapxbcServerKey::begin_rsa_oaep_key_agreement(rsa_pub_key).unwrap();
 
         let client_key = MsOapxbcSessionKey::complete_tpm_rsa_oaep_key_agreement(
-            &mut softtpm,
+            &mut soft_tpm,
+            &root_storage_key,
             &msrsa_key,
             &jwec,
         )
@@ -509,7 +521,7 @@ mod tests {
         let jweb = JweBuilder::from(input.clone()).build();
 
         let jwe_encrypted = client_key
-            .encipher(&mut softtpm, &msrsa_key, &jweb)
+            .encipher(&mut soft_tpm, &root_storage_key, &jweb)
             .expect("Unable to encrypt.");
 
         // Decrypt with the partner.
@@ -524,29 +536,30 @@ mod tests {
     fn ms_oapxbc_reflexive_signature_test() {
         let _ = tracing_subscriber::fmt::try_init();
 
-        let mut softtpm: BoxedDynTpm = BoxedDynTpm::new(SoftTpm::new());
+        let mut soft_tpm = SoftTpm::default();
         let auth_value = AuthValue::ephemeral().unwrap();
-        let loadable_machine_key = softtpm.machine_key_create(&auth_value).unwrap();
+        let loadable_storage_key = soft_tpm
+            .root_storage_key_create(&auth_value)
+            .expect("Unable to create new storage key");
 
-        let machine_key = softtpm
-            .machine_key_load(&auth_value, &loadable_machine_key)
+        let root_storage_key = soft_tpm
+            .root_storage_key_load(&auth_value, &loadable_storage_key)
+            .expect("Unable to load storage key");
+
+        let loadable_msrsa_key = soft_tpm.rs256_create(&root_storage_key).unwrap();
+
+        let msrsa_key = soft_tpm
+            .rs256_load(&root_storage_key, &loadable_msrsa_key)
             .unwrap();
 
-        let loadable_msrsa_key = softtpm.msoapxbc_rsa_key_create(&machine_key).unwrap();
-
-        let msrsa_key = softtpm
-            .msoapxbc_rsa_key_load(&machine_key, &loadable_msrsa_key)
-            .unwrap();
-
-        let msrsa_public_key_der = softtpm.msoapxbc_rsa_public_as_der(&msrsa_key).unwrap();
-
-        let rsa_pub_key = Rsa::public_key_from_der(&msrsa_public_key_der).unwrap();
+        let rsa_pub_key = soft_tpm.rs256_public(&msrsa_key).unwrap();
 
         let (server_key, jwec) =
             MsOapxbcServerKey::begin_rsa_oaep_key_agreement(rsa_pub_key).unwrap();
 
         let client_key = MsOapxbcSessionKey::complete_tpm_rsa_oaep_key_agreement(
-            &mut softtpm,
+            &mut soft_tpm,
+            &root_storage_key,
             &msrsa_key,
             &jwec,
         )
@@ -556,7 +569,7 @@ mod tests {
         let jws = JwsBuilder::from(input.clone()).build();
 
         let jws_signed = client_key
-            .sign(&mut softtpm, &msrsa_key, &jws)
+            .sign(&mut soft_tpm, &root_storage_key, &jws)
             .expect("Unable to sign.");
 
         // Decrypt with the partner.
@@ -567,7 +580,7 @@ mod tests {
 
     #[test]
     fn ms_oapxbc_3_2_5_1_3_3_exchange_request_response() {
-        let rsa_priv_key = Rsa::private_key_from_der(&[
+        let rsa_priv_key = RS256PrivateKey::from_pkcs1_der(&[
             48, 130, 4, 162, 2, 1, 0, 2, 130, 1, 1, 0, 180, 132, 214, 68, 242, 2, 15, 193, 241,
             133, 64, 208, 45, 231, 251, 49, 253, 121, 19, 203, 105, 62, 13, 89, 4, 105, 29, 59,
             113, 117, 198, 67, 106, 211, 221, 61, 249, 122, 211, 236, 84, 189, 106, 75, 28, 107,
@@ -636,24 +649,28 @@ mod tests {
 
         let session_key_jwe = JweCompact::from_str("eyJlbmMiOiJBMjU2R0NNIiwiYWxnIjoiUlNBLU9BRVAifQ.U95cslQ5YAV7FuQsTF45pcHpgpKCI8arJlz6IXbsXr2flZ4tpuO39dYHKZUXXrufObnvSe04Yetuk5osnL5E9EX7b3cWKDkLwo-KK7iT6B5i_XVbtUUBE87x3UfL8N-rUxIeW-Pyky5DzbZ7hsEkrbjgM16DTCIFucItvjwfJctL3ZTfUMIUrVDq1FjOhXrwu3Wrodi7sLm84lpLX_VQ7cqfmzPWfr-7FFtmJzj99rWDJPOM6ynucDbTxxjKeoW6Ft4EMna3_qdqw1A9_7PFDXSsprjJSGbbCvYhiSgib3k8JKKXr-uEGqyIERV0ajw-oJLHWUyuuu3EWlQul-urOg.KSGiTmZY4a8E4dRF.Gg.FYVcZT1WdLkRKABMOL5wyA").unwrap();
 
-        let mut softtpm: BoxedDynTpm = BoxedDynTpm::new(SoftTpm::new());
+        let mut soft_tpm = SoftTpm::default();
         let auth_value = AuthValue::ephemeral().unwrap();
-        let loadable_machine_key = softtpm.machine_key_create(&auth_value).unwrap();
+        let loadable_storage_key = soft_tpm
+            .root_storage_key_create(&auth_value)
+            .expect("Unable to create new storage key");
 
-        let machine_key = softtpm
-            .machine_key_load(&auth_value, &loadable_machine_key)
+        let root_storage_key = soft_tpm
+            .root_storage_key_load(&auth_value, &loadable_storage_key)
+            .expect("Unable to load storage key");
+
+        // let loadable_msrsa_key = soft_tpm.rs256_create(&root_storage_key).unwrap();
+        let loadable_msrsa_key = soft_tpm
+            .rs256_import(&root_storage_key, rsa_priv_key)
             .unwrap();
 
-        let loadable_msrsa_key = softtpm
-            .msoapxbc_rsa_key_import(&machine_key, rsa_priv_key)
-            .unwrap();
-
-        let msrsa_key = softtpm
-            .msoapxbc_rsa_key_load(&machine_key, &loadable_msrsa_key)
+        let msrsa_key = soft_tpm
+            .rs256_load(&root_storage_key, &loadable_msrsa_key)
             .unwrap();
 
         let session_key = MsOapxbcSessionKey::complete_tpm_rsa_oaep_key_agreement(
-            &mut softtpm,
+            &mut soft_tpm,
+            &root_storage_key,
             &msrsa_key,
             &session_key_jwe,
         )
@@ -662,7 +679,7 @@ mod tests {
         let enc_access_token = JweCompact::from_str("eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIiwiY3R4IjoiVVFvcWtvUldYNVFoNnpTbkV2V09aWVgyTXd1QVB4dkQifQ..uAgdAx7E8-rH7xdQDiJVzg.WRDzuK4NGxFjxdKfnzhcWB_Prx5OxkN5b5XLiPoQtkuZIxCaCAqFAe03QmGz60Io6T3e-LKa3mZ2yD62ZY98957_f7yr8ohFeZfCokwl0M5UpsmeVALEB2d-gLUld3hChFJPXcBwexrNkOnIy2gkqrvvvd_L1HooKQbtD7CXuAdKA1Vhpm4zfqSXOjLqoWcAiybdjd8fUwvgY_W0P_giIJh9qkkOGoF_WXXH8zmQ2ZSk9YmjQXH2LH_VzV9UUmpnRzicx6Wp42IpLEf16YNyO62186Z1GVbchxGV7xY4gT-0bVmjvRrXO91XpM-Jf6hmXXnnp-AfQuqISo3D937TjSiBrCE3MVpb5lJFI3M2Sib3ELez71JEVlqKV4vMY9_xRBnRx9qGFKLpI5rZPk660rgD7Uj6UwyMCodJAJWBycjhc2QekDgVFuyMpuG57u8FdV9wyVaE2STTk0in5f5EoYGzXBIo5QzhMJqvXlm_MjyiG4M3YikfcGIIPODpx7dLL15I-CrHGg2ynOPP0_AEUdkfzM0IXN8KxHoyqGh891LqBMvOyfIKg2gj1FA3S919bLBCvFmh4YLdC1xjHoYayxL44dmL-2vrhJS45nG3LhcTShXHZfeP3IM_qbZ-FFqXnBmj-c9tiEqrTfS1ihHyPAgmpBNWjNBgX2BxCWrwxinMLNeXsosrylUvPuCNTcoEJBIzVmrlw03CZldno3Js7Y_MLuLmYXTU6Kblp0dtz-U7HpCZ3H9L2M5UwbLcBXkxng-86vB3wBA77QkRC5lYuBTS0LSvze_bNzDtB8cZ6eFM57iIwa0NnZp2ocGxEXYs6EBxuqlRjIKyrjndowkbkkXAh4pExFdkQPGPbeN6SKaaGeZkFgegEzZIiCNzXvkT33TlYWXYtUzNwdUlqvI56zlQ2-ZtC2D898mekW3ergJoB0vKNxBqux-d0kJLLH6YidZuA4xl7E3aYXgcDUbgLBlS8PXnsxNLU4lqFg-tx8_MYYCVVFrlsp2_uY6GyS0ooEEWI_FvebyqAGhtJRPiCJkrwcHcTEX9byTuOjI7Axt6eSo6Cg6t3pVOfyY5uBM-Z-s1pxeDiEjl-D9GbxoxnTB-oGYq6P6u4uG6OEByT79sHo1flReOoOLh4MQ4dkaR0OHS6bzZyUjeEIuT6vyuzBWGV8uGlzYYXfX4QujsMTQM-20A8X_84OWq6KwsBJC790VaTdSK0AWWPHMRIDfAgNksr9W9Bnn2mGhDcUrquy8sBaFw6S8qlckG2uM7Rm_QvUxHV-4z_tvhdLObRs_3_dSo15qZTO2pPdCYu89tSkuLg6v-NHb9nPgVztcJdePDYw1ZHwIr0ha_HSjO3zIM36aJ16JN0qh9vcaZVe8KrKka2y9JMi0EZPvMnL9t78IIJB3sDU1ZTluq1KdA-4UnCo_BCo82W74oTcF_peKnaEI9VawsLelZuqH6qNAz510wRc72hIiPb6od4h7m8r5OLNAzmzMSKj3tK6OnHbht52ci5jXcNO9Z_0QW6R72HFPvEUlXjzBsNhM6pg8Zap3U8-dTkMfmblFkHSGu4cwvB-uTUsfGJ9q4QZLaTA_fekAVqHYedhsf20jbtbvA3b3ugLqza3Kb0QIAmO7EfeFmg-qSBZP4prLCyMNZ4IQdyOscJ1LGtFm2rkxNwQyOSqFNmvET81C9lud2TnikD4_6k3_vhpl4hvgMrm0uj9U170RgTi9ZCewwxochnf8qmmi8mFc9b6uFHLtdtAbIC4u8vsVwDG_gyBiVVi68saMgpwwT_ZYDLBA4hJvqM3M9sUB2RJYoBATlT_0WjIRXNBzhp8hdkdqrwERvjBC1cKH2XalPqYHI7aQoTZfKXvJnMTsKVraXiQ6TcWBhbfTyscUAc88O3z-0CRUv0Cn0APcgSUyaKtPQuG3bVKmfh0W8RittX3iPyIKMLsQmugQMqHg5SihIMoshvlrMXnmANwQ0L0qJYtHb2nFR4OoPaL7zE8Jo9vwxS4CaxE13VZt3Xj5_FtAgXaPoq0pVm1I0xJ-B3KkMa65mN_PmuORJGfRqODlr_x0JrDPGvByYVvy11prUPBRM9pOQBa9y3Xintx_xiR-0uVDhmPPdhgkarm074Fkfj7sNxicx2NIOT6QMlh6m_VXAwE0fxEUb_PRBQl-El02PgQcOlZZ1_JGrlxERFcX8cchBZQwmbMCGABHrnChuhoR-l_-aU_oeGVHWjXD_dq57MUmsuXoe2s48X073Y4hhXjedvloOGyod7WFc4VSB0uo3ipKnwkwuarw9b_4q0epU3mhybyQpqDys-qSAPucdyOVf9knttKG4s4zNDffdxPxZLKQfSgNKg11oI0zcrQYIfBDerzRW9VECihy64GWEGZvZ88pgHuDhbva8DtZf8MVLEG9kB3ZpuYXu3vvfgoZ209YdOF-9RoQaQuu1pFGGyVcGHWuELIreUw9uRlKKhwcih_jTqLT6e7S4KtS5Dck3t56npdx9iIauxocbos3sWke88faO5ZhUmc7E5Wy-f-jtFTjm9UaZdGsru1izJEuv.").unwrap();
 
         let decrypted = session_key
-            .decipher_prt_v2(&mut softtpm, &msrsa_key, &enc_access_token)
+            .decipher_prt_v2(&mut soft_tpm, &root_storage_key, &enc_access_token)
             .unwrap();
 
         let expected_payload = b"{\"token_type\":\"Bearer\",\"expires_in\":\"1209599\",\"ext_expires_in\":\"0\",\"expires_on\":\"1708017084\",\"refresh_token\":\"0.AbcAblw1aGMKLUSi7HHMa7PiS4c7qjhtoBdIsnV6MWmI2TvJACY.AgABAAEAAAAmoFfGtYxvRrNriQdPKIZ-AgDs_wUA9P8JhDh2ZGgZJMbl8WvzRwn4FQN698G15Fhng20zMjR1OMFAuR65vnyoEvf7kZdIVik54ljWvg7vG7h23Sret_RYtkAS1MnXKy-eHXQDTuZm-Z5JzqfHZO-3JMChedsjVMJkhU_TpS5hFnN1VW8OLifZNaZMDY0W-iWxeKMQ9wnXlBLaCR8ZgLYYGF7k64N5fK3nYSIexeLkom-cGOP0st08M-N4teht4j811BmJIFkl2AzJEpuUU_DmZHPUyOiK_GXopSehpddw3xwCgZ7DF6rxEjKPP33REQE3LjZAtZWuOtH_9QeKzkD_YyExajvU8-liszws8d0yAvi2W4KeMKfAy8LR05CFGQAB0H380xx3IoBsVykiOLVeWU0eBLDePFKqYQCjXY9N_VTmkPovFwyKK-LuPKmJQ_03p30dk6b6xhJIpiy8G1PiHcObIMD6e8WsdlCbdvVhDk5x65G4ReecCLD0wpVpATVO2k9lJcnUTUugySkQtmW-AJDPsH5Yn-SsG75TZ2F1EB2fWG3DOd0k_HBSzvijostQUl6U0hwzwR2KO5Av7i_1SpQDn8MhgClAqyTwqxYU4g4RdqvadhIq6LWzmkq_T-FzkmIrcRV8nDetEtrdNJcbt0MxfryeByPkH_9F8Sql1YMdSFOatURvgb6WXRxqVEvYr4R7MppzTvuSc07jOMjAiI1DVCnxPHjEtd0NsTWFqQ0UIuOehYeT36v7_3CPhIGPjm6NkjlpPf2xOqHpbRGuGC748FadhdocjMXUzGtqQ6c4sk-tv2JXzQ\",\"refresh_token_expires_in\":1209599,\"id_token\":\"eyJ0eXAiOiJKV1QiLCJhbGciOiJub25lIn0.eyJhdWQiOiIzOGFhM2I4Ny1hMDZkLTQ4MTctYjI3NS03YTMxNjk4OGQ5M2IiLCJpc3MiOiJodHRwczovL3N0cy53aW5kb3dzLm5ldC82ODM1NWM2ZS0wYTYzLTQ0MmQtYTJlYy03MWNjNmJiM2UyNGIvIiwiaWF0IjoxNzA2ODA3MTg0LCJuYmYiOjE3MDY4MDcxODQsImV4cCI6MTcwNjgxMTA4NCwiYW1yIjpbInB3ZCIsInJzYSJdLCJpcGFkZHIiOiI2OS4xNjMuNjYuOTYiLCJuYW1lIjoiVHV4Iiwib2lkIjoiOTBkNjc1ZGYtYmZhOC00ZDc4LThmOGYtN2IxMDQzMTgxYmI2IiwicHdkX3VybCI6Imh0dHBzOi8vcG9ydGFsLm1pY3Jvc29mdG9ubGluZS5jb20vQ2hhbmdlUGFzc3dvcmQuYXNweCIsInJoIjoiMC5BYmNBYmx3MWFHTUtMVVNpN0hITWE3UGlTNGM3cWpodG9CZElzblY2TVdtSTJUdkpBQ1kuIiwic3ViIjoiN1JoODRvOXlzSjZ3bjMwNFBFSTl1UDJ6R2Nzc05jb3lwLWp3YmR5VWxlTSIsInRlbmFudF9kaXNwbGF5X25hbWUiOiJNU0ZUIiwidGlkIjoiNjgzNTVjNmUtMGE2My00NDJkLWEyZWMtNzFjYzZiYjNlMjRiIiwidW5pcXVlX25hbWUiOiJ0dXhAMTBmcDd6Lm9ubWljcm9zb2Z0LmNvbSIsInVwbiI6InR1eEAxMGZwN3oub25taWNyb3NvZnQuY29tIiwidmVyIjoiMS4wIn0.\"}";

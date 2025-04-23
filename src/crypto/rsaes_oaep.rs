@@ -1,99 +1,60 @@
+use crate::compact::JweProtectedHeader;
 use crate::compact::{JweAlg, JweCompact};
 use crate::jwe::Jwe;
+use crate::traits::{JweEncipherInnerA256, JweEncipherOuterA256};
 use crate::JwtError;
 
-use crate::compact::JweProtectedHeader;
-use crate::traits::{JweEncipherInner, JweEncipherOuter};
-
-use openssl::encrypt::{Decrypter, Encrypter};
-use openssl::hash::MessageDigest;
-use openssl::pkey::PKey;
-use openssl::pkey::Private;
-use openssl::pkey::Public;
-use openssl::rsa::{Padding, Rsa};
+use crypto_glue::{
+    aes256::{self, Aes256Key},
+    rand,
+    rsa::{Oaep, RS256PrivateKey, RS256PublicKey},
+    sha1,
+};
 
 /// A JWE outer decipher for RSA-OAEP.
 /// You should prefer [crate::crypto::JweEcdhEsA128KWEncipher] or
 /// [crate::crypto::JweA128KWEncipher]
 pub struct JweRSAOAEPDecipher {
-    rsa_priv_key: PKey<Private>,
+    rsa_priv_key: RS256PrivateKey,
 }
 
-impl TryFrom<Rsa<Private>> for JweRSAOAEPDecipher {
-    type Error = JwtError;
-
-    fn try_from(value: Rsa<Private>) -> Result<Self, Self::Error> {
-        let rsa_priv_key = PKey::from_rsa(value).map_err(|ossl_err| {
-            debug!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
-        Ok(JweRSAOAEPDecipher { rsa_priv_key })
+impl From<RS256PrivateKey> for JweRSAOAEPDecipher {
+    fn from(rsa_priv_key: RS256PrivateKey) -> Self {
+        JweRSAOAEPDecipher { rsa_priv_key }
     }
 }
 
 impl JweRSAOAEPDecipher {
-    pub(crate) fn unwrap_key(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
-        let expected_wrap_key_buffer_len = jwec.header.enc.key_len();
+    pub(crate) fn unwrap_key(&self, jwec: &JweCompact) -> Result<Aes256Key, JwtError> {
+        // I'm not sure if this needs to be bigger or smaller? Guess we'll see!
+        if jwec.content_enc_key.len() > 256 {
+            debug!(
+                length = jwec.content_enc_key.len(),
+                "invalid content key length"
+            );
+            return Err(JwtError::CryptoError);
+        }
 
-        // Decrypt cek
-        let mut wrap_key_decrypter = Decrypter::new(&self.rsa_priv_key).map_err(|ossl_err| {
-            debug!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
-        wrap_key_decrypter
-            .set_rsa_padding(Padding::PKCS1_OAEP)
-            .map_err(|ossl_err| {
-                debug!(?ossl_err);
-                JwtError::OpenSSLError
+        let padding = Oaep::new::<sha1::Sha1>();
+        let decrypted_data = self
+            .rsa_priv_key
+            .decrypt(padding, jwec.content_enc_key.as_slice())
+            .map_err(|err| {
+                debug!(?err, "failed to decrypt key");
+                JwtError::CryptoError
             })?;
 
-        wrap_key_decrypter
-            .set_rsa_mgf1_md(MessageDigest::sha1())
-            .map_err(|ossl_err| {
-                debug!(?ossl_err);
-                JwtError::OpenSSLError
-            })?;
-
-        wrap_key_decrypter
-            .set_rsa_oaep_md(MessageDigest::sha1())
-            .map_err(|ossl_err| {
-                debug!(?ossl_err);
-                JwtError::OpenSSLError
-            })?;
-
-        // Rsa oaep will often work on bigger block sizes, so we need a larger buffer and then we
-        // can copy later. First we check the expected length of the decryption.
-        let buf_len = wrap_key_decrypter
-            .decrypt_len(&jwec.content_enc_key)
-            .map_err(|ossl_err| {
-                debug!(?ossl_err);
-                JwtError::OpenSSLError
-            })?;
-
-        let mut unwrapped_key = vec![0; buf_len];
-
-        wrap_key_decrypter
-            .decrypt(&jwec.content_enc_key, &mut unwrapped_key)
-            .map_err(|ossl_err| {
-                debug!(?ossl_err);
-                JwtError::OpenSSLError
-            })?;
-
-        unwrapped_key.truncate(expected_wrap_key_buffer_len);
-
-        Ok(unwrapped_key)
+        aes256::key_from_vec(decrypted_data).ok_or_else(|| {
+            debug!("invalid content key length");
+            JwtError::CryptoError
+        })
     }
 
     /// Given a JWE in compact form, decipher and authenticate its content.
     pub fn decipher(&self, jwec: &JweCompact) -> Result<Jwe, JwtError> {
         let unwrapped_key = self.unwrap_key(jwec)?;
 
-        let payload = jwec
-            .header
-            .enc
-            .decipher_inner(unwrapped_key.as_slice(), jwec)?;
+        let payload = jwec.header.enc.decipher_inner_a256(unwrapped_key, jwec)?;
 
         Ok(Jwe {
             header: jwec.header.clone(),
@@ -105,82 +66,38 @@ impl JweRSAOAEPDecipher {
 /// A JWE outer encipher for RSA-OAEP. This type can only encipher.
 /// You should prefer [crate::crypto::JweEcdhEsA128KWEncipher] or [crate::crypto::JweA128KWEncipher]
 pub struct JweRSAOAEPEncipher {
-    rsa_pub_key: PKey<Public>,
+    rsa_pub_key: RS256PublicKey,
 }
 
-impl TryFrom<Rsa<Public>> for JweRSAOAEPEncipher {
-    type Error = JwtError;
-
-    fn try_from(value: Rsa<Public>) -> Result<Self, Self::Error> {
-        let rsa_pub_key = PKey::from_rsa(value).map_err(|ossl_err| {
-            debug!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
-        Ok(JweRSAOAEPEncipher { rsa_pub_key })
+impl From<RS256PublicKey> for JweRSAOAEPEncipher {
+    fn from(rsa_pub_key: RS256PublicKey) -> Self {
+        JweRSAOAEPEncipher { rsa_pub_key }
     }
 }
 
 impl JweRSAOAEPEncipher {
     /// Given a JWE, encipher its content to a compact form.
-    pub fn encipher<E: JweEncipherInner>(&self, jwe: &Jwe) -> Result<JweCompact, JwtError> {
+    pub fn encipher<E: JweEncipherInnerA256>(&self, jwe: &Jwe) -> Result<JweCompact, JwtError> {
         let encipher = E::new_ephemeral()?;
         encipher.encipher_inner(self, jwe)
     }
 }
 
-impl JweEncipherOuter for JweRSAOAEPEncipher {
+impl JweEncipherOuterA256 for JweRSAOAEPEncipher {
     fn set_header_alg(&self, hdr: &mut JweProtectedHeader) -> Result<(), JwtError> {
         hdr.alg = JweAlg::RSA_OAEP;
         Ok(())
     }
 
-    fn wrap_key(&self, key_to_wrap: &[u8]) -> Result<Vec<u8>, JwtError> {
-        let mut wrap_key_encrypter = Encrypter::new(&self.rsa_pub_key).map_err(|ossl_err| {
-            debug!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
-        wrap_key_encrypter
-            .set_rsa_padding(Padding::PKCS1_OAEP)
-            .map_err(|ossl_err| {
-                debug!(?ossl_err);
-                JwtError::OpenSSLError
-            })?;
-
-        wrap_key_encrypter
-            .set_rsa_mgf1_md(MessageDigest::sha1())
-            .map_err(|ossl_err| {
-                debug!(?ossl_err);
-                JwtError::OpenSSLError
-            })?;
-
-        wrap_key_encrypter
-            .set_rsa_oaep_md(MessageDigest::sha1())
-            .map_err(|ossl_err| {
-                debug!(?ossl_err);
-                JwtError::OpenSSLError
-            })?;
-
-        let buf_len = wrap_key_encrypter
-            .encrypt_len(key_to_wrap)
-            .map_err(|ossl_err| {
-                debug!(?ossl_err);
-                JwtError::OpenSSLError
-            })?;
-
-        let mut wrapped_key = vec![0; buf_len];
-
-        let encoded_len = wrap_key_encrypter
-            .encrypt(key_to_wrap, &mut wrapped_key)
-            .map_err(|ossl_err| {
-                debug!(?ossl_err);
-                JwtError::OpenSSLError
-            })?;
-
-        wrapped_key.truncate(encoded_len);
-
-        Ok(wrapped_key)
+    fn wrap_key(&self, key_to_wrap: Aes256Key) -> Result<Vec<u8>, JwtError> {
+        let mut rng = rand::thread_rng();
+        let padding = Oaep::new::<sha1::Sha1>();
+        self.rsa_pub_key
+            .encrypt(&mut rng, padding, key_to_wrap.as_slice())
+            .map_err(|err| {
+                debug!(?err, "failed to encrypt key");
+                JwtError::CryptoError
+            })
     }
 }
 
@@ -189,26 +106,13 @@ mod tests {
     use super::{JweRSAOAEPDecipher, JweRSAOAEPEncipher};
     use crate::compact::JweCompact;
     use crate::crypto::a256gcm::JweA256GCMEncipher;
+    use crate::jwe::JweBuilder;
     use base64::{engine::general_purpose, Engine as _};
+    use crypto_glue::rsa::{self, BigUint, RS256PrivateKey, RS256PublicKey};
     use std::convert::TryFrom;
     use std::str::FromStr;
 
-    use crate::jwe::JweBuilder;
-
-    use openssl::bn;
-    use openssl::pkey::Private;
-    use openssl::rsa::Rsa;
-
-    fn rsa_from_private_components(
-        n: &str,
-        e: &str,
-        d: &str,
-        p: &str,
-        q: &str,
-        dmp1: &str,
-        dmq1: &str,
-        iqmp: &str,
-    ) -> Rsa<Private> {
+    fn rsa_from_private_components(n: &str, e: &str, d: &str) -> RS256PrivateKey {
         let n = general_purpose::URL_SAFE_NO_PAD
             .decode(n)
             .expect("Invalid Key");
@@ -221,38 +125,11 @@ mod tests {
             .decode(d)
             .expect("Invalid Key");
 
-        let p = general_purpose::URL_SAFE_NO_PAD
-            .decode(p)
-            .expect("Invalid Key");
+        let nbn = BigUint::from_bytes_be(&n);
+        let ebn = BigUint::from_bytes_be(&e);
+        let dbn = BigUint::from_bytes_be(&d);
 
-        let q = general_purpose::URL_SAFE_NO_PAD
-            .decode(q)
-            .expect("Invalid Key");
-
-        let dmp1 = general_purpose::URL_SAFE_NO_PAD
-            .decode(dmp1)
-            .expect("Invalid Key");
-
-        let dmq1 = general_purpose::URL_SAFE_NO_PAD
-            .decode(dmq1)
-            .expect("Invalid Key");
-
-        let iqmp = general_purpose::URL_SAFE_NO_PAD
-            .decode(iqmp)
-            .expect("Invalid Key");
-
-        let nbn = bn::BigNum::from_slice(&n).expect("Invalid bignumber");
-        let ebn = bn::BigNum::from_slice(&e).expect("Invalid bignumber");
-        let dbn = bn::BigNum::from_slice(&d).expect("Invalid bignumber");
-        let pbn = bn::BigNum::from_slice(&p).expect("Invalid bignumber");
-        let qbn = bn::BigNum::from_slice(&q).expect("Invalid bignumber");
-
-        let dpbn = bn::BigNum::from_slice(&dmp1).expect("Invalid bignumber");
-        let dqbn = bn::BigNum::from_slice(&dmq1).expect("Invalid bignumber");
-        let dibn = bn::BigNum::from_slice(&iqmp).expect("Invalid bignumber");
-
-        Rsa::from_private_components(nbn, ebn, dbn, pbn, qbn, dpbn, dqbn, dibn)
-            .expect("Invalid parameters")
+        RS256PrivateKey::from_components(nbn, ebn, dbn, vec![]).expect("Invalid parameters")
     }
 
     #[test]
@@ -267,18 +144,7 @@ mod tests {
 "oahUIoWw0K0usKNuOR6H4wkf4oBUXHTxRvgb48E-BVvxkeDNjbC4he8rUWcJoZmds2h7M70imEVhRU5djINXtqllXI4DFqcI1DgjT9LewND8MW2Krf3Spsk_ZkoFnilakGygTwpZ3uesH-PFABNIUYpOiN15dsQRkgr0vEhxN92i2asbOenSZeyaxziK72UwxrrKoExv6kc5twXTq4h-QChLOln0_mtUZwfsRaMStPs6mS6XrgxnxbWhojf663tuEQueGC-FCMfra36C9knDFGzKsNa7LZK2djYgyD3JR_MB_4NUJW_TqOQtwHYbxevoJArm-L5StowjzGy-_bq6Gw",
 "AQAB",
 "kLdtIj6GbDks_ApCSTYQtelcNttlKiOyPzMrXHeI-yk1F7-kpDxY4-WY5NWV5KntaEeXS1j82E375xxhWMHXyvjYecPT9fpwR_M9gV8n9Hrh2anTpTD93Dt62ypW3yDsJzBnTnrYu1iwWRgBKrEYY46qAZIrA2xAwnm2X7uGR1hghkqDp0Vqj3kbSCz1XyfCs6_LehBwtxHIyh8Ripy40p24moOAbgxVw3rxT_vlt3UVe4WO3JkJOzlpUf-KTVI2Ptgm-dARxTEtE-id-4OJr0h-K-VFs3VSndVTIznSxfyrj8ILL6MG_Uv8YAu7VILSB3lOW085-4qE3DzgrTjgyQ",
-"1r52Xk46c-LsfB5P442p7atdPUrxQSy4mti_tZI3Mgf2EuFVbUoDBvaRQ-SWxkbkmoEzL7JXroSBjSrK3YIQgYdMgyAEPTPjXv_hI2_1eTSPVZfzL0lffNn03IXqWF5MDFuoUYE0hzb2vhrlN_rKrbfDIwUbTrjjgieRbwC6Cl0",
-"wLb35x7hmQWZsWJmB_vle87ihgZ19S8lBEROLIsZG4ayZVe9Hi9gDVCOBmUDdaDYVTSNx_8Fyw1YYa9XGrGnDew00J28cRUoeBB_jKI1oma0Orv1T9aXIWxKwd4gvxFImOWr3QRL9KEBRzk2RatUBnmDZJTIAfwTs0g68UZHvtc",
-"ZK-YwE7diUh0qR1tR7w8WHtolDx3MZ_OTowiFvgfeQ3SiresXjm9gZ5KLhMXvo-uz-KUJWDxS5pFQ_M0evdo1dKiRTjVw_x4NyqyXPM5nULPkcpU827rnpZzAJKpdhWAgqrXGKAECQH0Xt4taznjnd_zVpAmZZq60WPMBMfKcuE",
-"Dq0gfgJ1DdFGXiLvQEZnuKEN0UUmsJBxkjydc3j4ZYdBiMRAy86x0vHCjywcMlYYg4yoC4YZa9hNVcsjqA3FeiL19rk8g6Qn29Tt0cj8qqyFpz9vNDBUfCAiJVeESOjJDZPYHdHY8v1b-o-Z2X5tvLx-TCekf7oxyeKDUqKWjis",
-"VIMpMYbPf47dT1w_zDUXfPimsSegnMOA1zTaX7aGk_8urY6R8-ZW1FxU7AlWAyLWybqq6t16VFd7hQd0y6flUK4SlOydB61gwanOsXGOAOv82cHq0E3eL4HrtZkUuKvnPrMnsUUFlfUdybVzxyjz9JF_XyaY14ardLSjf4L_FNY"
 );
-
-        // Check key parameters
-        assert!(rsa_priv_key.check_key().unwrap());
-
-        // let der_bytes = rsa_priv_key.private_key_to_der().unwrap();
-        // error!(?der_bytes);
 
         let jwec = JweCompact::from_str(test_jwe).unwrap();
 
@@ -347,17 +213,13 @@ mod tests {
         let input = vec![1; 256];
         let jweb = JweBuilder::from(input.clone()).build();
 
-        let rsa_priv_key = Rsa::generate(2048).unwrap();
+        let rsa_priv_key = rsa::new_key(0).unwrap();
 
-        let rsa_pub_key = Rsa::from_public_components(
-            rsa_priv_key.n().to_owned().unwrap(),
-            rsa_priv_key.e().to_owned().unwrap(),
-        )
-        .unwrap();
+        let rsa_pub_key = RS256PublicKey::from(&rsa_priv_key);
 
-        let jwe_rsa_oaep_decipher = JweRSAOAEPDecipher::try_from(rsa_priv_key).unwrap();
+        let jwe_rsa_oaep_decipher = JweRSAOAEPDecipher::from(rsa_priv_key);
 
-        let jwe_rsa_oaep_encipher = JweRSAOAEPEncipher::try_from(rsa_pub_key).unwrap();
+        let jwe_rsa_oaep_encipher = JweRSAOAEPEncipher::from(rsa_pub_key);
 
         let jwe_encrypted = jwe_rsa_oaep_encipher
             .encipher::<JweA256GCMEncipher>(&jweb)

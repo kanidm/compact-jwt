@@ -66,7 +66,6 @@ impl Jwe {
     }
 }
 
-#[cfg(all(feature = "openssl", test))]
 mod tests {
     use serde::{Deserialize, Serialize};
 
