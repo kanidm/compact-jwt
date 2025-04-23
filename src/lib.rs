@@ -113,14 +113,12 @@ pub mod jws;
 pub mod jwt;
 pub mod oidc;
 
-pub use crate::crypto::{JwsEs256Signer, JwsEs256Verifier, JwsHs256Signer};
-
 pub use crate::compact::{JwaAlg, JweCompact, Jwk, JwkKeySet, JwkUse, JwsCompact};
+pub use crate::crypto::{JwsEs256Signer, JwsEs256Verifier, JwsHs256Signer};
 pub use crate::error::JwtError;
 pub use crate::jws::{Jws, JwsSigned};
 pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};
 pub use crate::oidc::{OidcClaims, OidcSigned, OidcSubject, OidcToken, OidcUnverified};
-
 pub use crate::traits::{JwsSigner, JwsSignerToVerifier, JwsVerifier};
 
 const KID_LEN: usize = 32;

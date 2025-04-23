@@ -1,11 +1,14 @@
 //! JWS Signing and Verification Structures
 
+use crate::compact::{JweCompact, JweEnc, JwsCompact};
 use crate::error::JwtError;
 use base64::{engine::general_purpose, Engine as _};
+use crypto_glue::aes256::Aes256Key;
 
-use crate::compact::{JweCompact, JweEnc, JwsCompact};
-
-use crypto_glue::{aes256::Aes256Key, traits::DecodeDer, x509::Certificate};
+pub use crypto_glue::{
+    traits::{DecodeDer, DecodePem},
+    x509::Certificate,
+};
 
 // JWS types
 mod es256;
@@ -51,29 +54,30 @@ impl JwsCompact {
     /// toward the root.
     ///
     /// return [Ok(None)] if the jws object's header's x5c field isn't populated
-    pub fn get_x5c_chain(&self) -> Result<Option<Vec<Certificate>>, JwtError> {
+    pub fn get_x5c_chain(&self) -> Result<Option<(Certificate, Vec<Certificate>)>, JwtError> {
         let Some(fullchain) = &self.header.x5c else {
             return Ok(None);
         };
 
-        let fullchain: Result<Vec<_>, _> = fullchain
-            .iter()
-            .map(|value| {
-                general_purpose::STANDARD
-                    .decode(value)
-                    .map_err(|_| JwtError::InvalidBase64)
-                    .and_then(|bytes| {
-                        Certificate::from_der(&bytes).map_err(|e| {
-                            debug!(?e);
-                            JwtError::CryptoError
-                        })
+        let mut chain_iter = fullchain.iter().map(|value| {
+            general_purpose::STANDARD
+                .decode(value)
+                .map_err(|_| JwtError::InvalidBase64)
+                .and_then(|bytes| {
+                    Certificate::from_der(&bytes).map_err(|e| {
+                        debug!(?e);
+                        JwtError::CryptoError
                     })
-            })
-            .collect();
+                })
+        });
 
-        let fullchain = fullchain?;
+        let Some(leaf) = chain_iter.next().transpose()? else {
+            return Ok(None);
+        };
 
-        Ok(Some(fullchain))
+        let fullchain = chain_iter.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Some((leaf, fullchain)))
     }
 }
 
