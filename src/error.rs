@@ -30,6 +30,9 @@ pub enum JwtError {
     ValidatorAlgMismatch,
     /// Invalid JWT Key ID
     InvalidJwtKid,
+    /// The listed JweEnc type is not valid for the type of inner
+    /// decryption key we recieved
+    JweEncMismatch,
     /// The Token has expired
     OidcTokenExpired,
     /// No embeded JWK is available
