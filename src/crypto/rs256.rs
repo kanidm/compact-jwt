@@ -278,30 +278,6 @@ pub struct JwsRs256Verifier {
     digest: hash::MessageDigest,
 }
 
-/*
-impl TryFrom<x509::X509> for JwsRs256Verifier {
-    type Error = JwtError;
-
-    fn try_from(value: x509::X509) -> Result<Self, Self::Error> {
-        let pkey = value.public_key().map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-        let digest = hash::MessageDigest::sha256();
-        pkey.rsa()
-            .map(|pkey| JwsRs256Verifier {
-                kid: None,
-                pkey,
-                digest,
-            })
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
-            })
-    }
-}
-*/
-
 impl TryFrom<&Jwk> for JwsRs256Verifier {
     type Error = JwtError;
 
@@ -353,6 +329,62 @@ impl TryFrom<&Jwk> for JwsRs256Verifier {
                 Err(JwtError::ValidatorAlgMismatch)
             }
         }
+    }
+}
+
+impl JwsRs256Verifier {
+    /// Build an RS256 verifier from the DER public key
+    pub fn from_rs256_der(der: &[u8]) -> Result<Self, JwtError> {
+        let digest = hash::MessageDigest::sha256();
+
+        let pkey = rsa::Rsa::public_key_from_der(der).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
+
+        let kid = pkey
+            .public_key_to_der()
+            .and_then(|der| hash::hash(digest, &der))
+            .map(|hashout| {
+                let mut s = hex::encode(hashout);
+                s.truncate(KID_LEN);
+                s
+            })
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::OpenSSLError
+            })?;
+
+        Ok(JwsRs256Verifier { kid, pkey, digest })
+    }
+
+    /// Retrieve the JWK of this RS256 public verifier.
+    pub fn public_key_as_jwk(&self) -> Result<Jwk, JwtError> {
+        let public_key_n = self.pkey.n().to_vec_padded(RSA_SIG_SIZE).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
+
+        let public_key_e = self.pkey.e().to_vec_padded(3).map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })?;
+
+        Ok(Jwk::RSA {
+            n: public_key_n.into(),
+            e: public_key_e.into(),
+            alg: Some(JwaAlg::RS256),
+            use_: Some(JwkUse::Sig),
+            kid: Some(self.kid.clone()),
+        })
+    }
+
+    /// Export this public key as DER
+    pub fn public_key_to_der(&self) -> Result<Vec<u8>, JwtError> {
+        self.pkey.public_key_to_der().map_err(|e| {
+            debug!(?e);
+            JwtError::OpenSSLError
+        })
     }
 }
 
