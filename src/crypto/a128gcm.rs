@@ -15,13 +15,6 @@ pub struct JweA128GCMEncipher {
     aes_key: Aes128Key,
 }
 
-#[cfg(all(test, feature = "msextensions"))]
-impl JweA128GCMEncipher {
-    pub(crate) fn raw_key(&self) -> Aes128Key {
-        self.aes_key.clone()
-    }
-}
-
 impl From<Aes128Key> for JweA128GCMEncipher {
     fn from(aes_key: Aes128Key) -> Self {
         JweA128GCMEncipher { aes_key }

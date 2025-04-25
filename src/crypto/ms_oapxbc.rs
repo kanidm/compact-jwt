@@ -70,7 +70,7 @@ impl MsOapxbcSessionKey {
         // this key in some secure way?
         match jwec.header.enc {
             JweEnc::A256GCM => Ok(MsOapxbcSessionKey::A256GCM { sealed_session_key }),
-            // _ => Err(JwtError::CipherUnavailable),
+            JweEnc::A128GCM => Err(JwtError::CipherUnavailable),
         }
     }
 }
