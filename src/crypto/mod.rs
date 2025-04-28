@@ -3,6 +3,7 @@
 use crate::compact::{JweCompact, JweEnc, JwsCompact};
 use crate::error::JwtError;
 use base64::{engine::general_purpose, Engine as _};
+use crypto_glue::aes128::Aes128Key;
 use crypto_glue::aes256::Aes256Key;
 
 pub use crypto_glue::{
@@ -18,6 +19,8 @@ mod tpm_es256;
 mod x509;
 
 // JWE types
+mod a128gcm;
+mod a128kw;
 mod a256gcm;
 mod a256kw;
 mod ecdhes_a256kw;
@@ -31,6 +34,8 @@ pub use hs256::JwsHs256Signer;
 pub use rs256::{JwsRs256Signer, JwsRs256Verifier};
 pub use x509::{JwsX509Verifier, JwsX509VerifierBuilder};
 
+pub use a128gcm::JweA128GCMEncipher;
+pub use a128kw::JweA128KWEncipher;
 pub use a256gcm::JweA256GCMEncipher;
 pub use a256kw::JweA256KWEncipher;
 pub use ecdhes_a256kw::{JweEcdhEsA256KWDecipher, JweEcdhEsA256KWEncipher};
@@ -89,10 +94,18 @@ impl JweEnc {
     ) -> Result<Vec<u8>, JwtError> {
         match self {
             JweEnc::A256GCM => a256gcm::JweA256GCMEncipher::from(aes256key).decipher_inner(jwec),
-            // JweEnc::A128GCM => a128gcm::JweA128GCMEncipher::try_from(key_buffer)
-            //     .and_then(|jwe_decipher| jwe_decipher.decipher_inner(jwec)),
-            // JweEnc::A128CBC_HS256 => a128cbc_hs256::JweA128CBCHS256Decipher::try_from(key_buffer)
-            //     .and_then(|jwe_decipher| jwe_decipher.decipher_inner(jwec)),
+            JweEnc::A128GCM => Err(JwtError::JweEncMismatch),
+        }
+    }
+
+    pub(crate) fn decipher_inner_a128(
+        self,
+        aes128key: Aes128Key,
+        jwec: &JweCompact,
+    ) -> Result<Vec<u8>, JwtError> {
+        match self {
+            JweEnc::A128GCM => a128gcm::JweA128GCMEncipher::from(aes128key).decipher_inner(jwec),
+            JweEnc::A256GCM => Err(JwtError::JweEncMismatch),
         }
     }
 }

@@ -5,9 +5,6 @@ use crate::error::JwtError;
 use crate::traits::*;
 use crate::KID_LEN;
 use base64::{engine::general_purpose, Engine as _};
-use std::fmt;
-use std::hash::{Hash, Hasher};
-
 use crypto_glue::{
     rsa::{
         self, BigUint, RS256Digest, RS256PrivateKey, RS256PublicKey, RS256Signature,
@@ -16,9 +13,11 @@ use crypto_glue::{
     s256,
     traits::{
         Digest, DigestSigner, DigestVerifier, Pkcs8DecodePrivateKey, Pkcs8EncodePrivateKey,
-        PublicKeyParts, SignatureEncoding, SpkiEncodePublicKey, Zeroizing,
+        PublicKeyParts, SignatureEncoding, SpkiDecodePublicKey, SpkiEncodePublicKey, Zeroizing,
     },
 };
+use std::fmt;
+use std::hash::{Hash, Hasher};
 
 /// A JWS signer that creates RSA SHA256 signatures.
 #[derive(Clone)]
@@ -220,29 +219,44 @@ pub struct JwsRs256Verifier {
     pkey: RS256PublicKey,
 }
 
-/*
-impl TryFrom<x509::X509> for JwsRs256Verifier {
-    type Error = JwtError;
-
-    fn try_from(value: x509::X509) -> Result<Self, Self::Error> {
-        let pkey = value.public_key().map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
+impl JwsRs256Verifier {
+    /// Create an RSA-SHA256 verifier from a public key in SPKI DER format.
+    pub fn from_rs256_der(der: &[u8]) -> Result<Self, JwtError> {
+        let pkey = RS256PublicKey::from_public_key_der(der).map_err(|err| {
+            debug!(?err);
+            JwtError::CryptoError
         })?;
-        let digest = hash::MessageDigest::sha256();
-        pkey.rsa()
-            .map(|pkey| JwsRs256Verifier {
-                kid: None,
-                pkey,
-                digest,
+
+        let kid = kid_from_public(&pkey)?;
+
+        Ok(JwsRs256Verifier { kid, pkey })
+    }
+
+    /// Export the content of this verifier as a public JWK
+    pub fn public_key_as_jwk(&self) -> Result<Jwk, JwtError> {
+        let public_key_n = self.pkey.n().to_bytes_be();
+        let public_key_e = self.pkey.e().to_bytes_be();
+
+        Ok(Jwk::RSA {
+            n: public_key_n.into(),
+            e: public_key_e.into(),
+            alg: Some(JwaAlg::RS256),
+            use_: Some(JwkUse::Sig),
+            kid: Some(self.kid.clone()),
+        })
+    }
+
+    /// Export the content of this public key in SPKI DER format
+    pub fn public_key_to_der(&self) -> Result<Vec<u8>, JwtError> {
+        self.pkey
+            .to_public_key_der()
+            .map_err(|err| {
+                debug!(?err);
+                JwtError::CryptoError
             })
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
-            })
+            .map(|pkey| pkey.into_vec())
     }
 }
-*/
 
 impl TryFrom<&Jwk> for JwsRs256Verifier {
     type Error = JwtError;

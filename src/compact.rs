@@ -337,8 +337,8 @@ impl JwsCompactVerifyData<'_> {
 #[allow(non_camel_case_types)]
 /// Cryptographic algorithm
 pub enum JweAlg {
-    // /// AES 128 Key Wrap
-    // A128KW,
+    /// AES 128 Key Wrap
+    A128KW,
     /// AES 256 Key Wrap
     #[default]
     A256KW,
@@ -367,10 +367,9 @@ pub enum JweEnc {
     /// encrypted and authenticated.
     #[default]
     A256GCM,
-    // /// AES 128 GCM. Header is authenticated but not encrypted, the payload is
-    // /// encrypted and authenticated.
-    // A128GCM,
-
+    /// AES 128 GCM. Header is authenticated but not encrypted, the payload is
+    /// encrypted and authenticated.
+    A128GCM,
     // /// AES 128 CBC with HMAC 256
     // #[serde(rename = "A128CBC-HS256")]
     // A128CBC_HS256,

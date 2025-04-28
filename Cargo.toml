@@ -28,7 +28,7 @@ serde_json = "^1.0.79"
 base64 = "^0.21.5"
 base64urlsafedata = "^0.5.1"
 
-crypto-glue = "^0.1.4"
+crypto-glue = "^0.1.5"
 kanidm-hsm-crypto = "0.3.1"
 
 url = { version = "^2.2.2", features = ["serde"] }
