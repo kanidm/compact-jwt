@@ -157,6 +157,11 @@ impl JwsRs256Signer {
             kid: Some(self.kid.clone()),
         })
     }
+
+    /// Manually override and set the key id that should be used in signatures.
+    pub fn set_kid(&mut self, kid: &str) {
+        self.kid = kid.to_string();
+    }
 }
 
 impl JwsSignerToVerifier for JwsRs256Signer {
