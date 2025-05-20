@@ -224,6 +224,15 @@ pub struct JwsRs256Verifier {
     pkey: RS256PublicKey,
 }
 
+impl TryFrom<RS256PublicKey> for JwsRs256Verifier {
+    type Error = JwtError;
+
+    fn try_from(pkey: RS256PublicKey) -> Result<Self, Self::Error> {
+        let kid = kid_from_public(&pkey)?;
+        Ok(JwsRs256Verifier { kid, pkey })
+    }
+}
+
 impl JwsRs256Verifier {
     /// Create an RSA-SHA256 verifier from a public key in SPKI DER format.
     pub fn from_rs256_der(der: &[u8]) -> Result<Self, JwtError> {
