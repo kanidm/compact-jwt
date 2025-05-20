@@ -16,6 +16,7 @@ mod es256;
 mod hs256;
 mod rs256;
 mod tpm_es256;
+mod tpm_rs256;
 mod x509;
 
 // JWE types
@@ -45,6 +46,7 @@ pub use rsaes_oaep::{JweRSAOAEPDecipher, JweRSAOAEPEncipher};
 pub use ms_oapxbc::MsOapxbcSessionKey;
 
 pub use tpm_es256::JwsTpmEs256Signer;
+pub use tpm_rs256::JwsTpmRs256Signer;
 
 #[cfg(test)]
 impl JwsCompact {
