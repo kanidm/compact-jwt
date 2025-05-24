@@ -15,7 +15,7 @@ pub struct JweA256GCMEncipher {
     aes_key: Aes256Key,
 }
 
-#[cfg(all(test, feature = "msextensions"))]
+#[cfg(test)]
 impl JweA256GCMEncipher {
     pub(crate) fn raw_key(&self) -> Aes256Key {
         self.aes_key.clone()

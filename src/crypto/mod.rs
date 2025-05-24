@@ -16,6 +16,7 @@ mod es256;
 mod hs256;
 mod rs256;
 mod tpm_es256;
+mod tpm_rs256;
 mod x509;
 
 // JWE types
@@ -26,7 +27,7 @@ mod a256kw;
 mod ecdhes_a256kw;
 mod rsaes_oaep;
 
-#[cfg(feature = "msextensions")]
+#[cfg(any(feature = "msextensions", test))]
 mod ms_oapxbc;
 
 pub use es256::{JwsEs256Signer, JwsEs256Verifier};
@@ -41,10 +42,11 @@ pub use a256kw::JweA256KWEncipher;
 pub use ecdhes_a256kw::{JweEcdhEsA256KWDecipher, JweEcdhEsA256KWEncipher};
 pub use rsaes_oaep::{JweRSAOAEPDecipher, JweRSAOAEPEncipher};
 
-#[cfg(feature = "msextensions")]
+#[cfg(any(feature = "msextensions", test))]
 pub use ms_oapxbc::MsOapxbcSessionKey;
 
 pub use tpm_es256::JwsTpmEs256Signer;
+pub use tpm_rs256::JwsTpmRs256Signer;
 
 #[cfg(test)]
 impl JwsCompact {
