@@ -14,7 +14,7 @@ use kanidm_hsm_crypto::{
 /// relying on references to the TPM rather than taking ownership of it. This means
 /// unlike other Signer types, you will need to build this struct each time you want
 /// to perform a signing operation in most cases.
-pub struct JwsTpmRs256Signer<'a, T: Tpm + TpmRS256> {
+pub struct JwsTpmRs256Signer<'a, T: Tpm + TpmRS256 + ?Sized> {
     kid: String,
     tpm: &'a mut T,
     id_key: &'a RS256Key,
