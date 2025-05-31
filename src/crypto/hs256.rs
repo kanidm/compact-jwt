@@ -150,6 +150,7 @@ impl JwsSigner for JwsHs256Signer {
 
         self.sign_inner(jws, sign_data)
     }
+
     fn set_sign_option_embed_kid(&self, value: bool) -> Self {
         JwsHs256Signer {
             sign_option_embed_kid: value,
