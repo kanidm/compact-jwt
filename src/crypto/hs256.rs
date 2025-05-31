@@ -49,13 +49,7 @@ impl JwsHs256Signer {
     /// Create a new secure private key for signing
     pub fn generate_hs256() -> Result<Self, JwtError> {
         let skey = hmac_s256::new_key();
-        let kid = kid(&skey);
-
-        Ok(JwsHs256Signer {
-            kid,
-            skey,
-            sign_option_embed_kid: true,
-        })
+        Ok(Self::from(skey))
     }
 
     pub(crate) fn sign_inner<V: JwsSignable>(
@@ -105,13 +99,25 @@ impl TryFrom<&[u8]> for JwsHs256Signer {
 
         key_bytes_mut[..buf.len()].copy_from_slice(buf);
 
+        Ok(Self::from(skey))
+    }
+}
+
+impl AsRef<HmacSha256Key> for JwsHs256Signer {
+    fn as_ref(&self) -> &HmacSha256Key {
+        &self.skey
+    }
+}
+
+impl From<HmacSha256Key> for JwsHs256Signer {
+    fn from(skey: HmacSha256Key) -> Self {
         let kid = kid(&skey);
 
-        Ok(JwsHs256Signer {
+        JwsHs256Signer {
             kid,
             skey,
             sign_option_embed_kid: true,
-        })
+        }
     }
 }
 
