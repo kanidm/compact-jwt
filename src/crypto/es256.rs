@@ -155,7 +155,6 @@ impl JwsEs256Signer {
 
     /// Export this signer to a DER private key.
     pub fn private_key_to_der(&self) -> Result<Zeroizing<Vec<u8>>, JwtError> {
-        // Need to make all these zeroizing.
         self.skey.to_sec1_der().map_err(|err| {
             debug!(?err);
             JwtError::CryptoError
@@ -204,6 +203,11 @@ impl JwsSignerToVerifier for JwsEs256Signer {
 impl JwsSigner for JwsEs256Signer {
     fn get_kid(&self) -> &str {
         self.kid.as_str()
+    }
+
+    fn set_kid(&mut self, kid: &str) {
+        self.sign_option_embed_kid = true;
+        self.kid = kid.to_string();
     }
 
     fn update_header(&self, header: &mut ProtectedHeader) -> Result<(), JwtError> {

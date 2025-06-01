@@ -15,6 +15,9 @@ pub trait JwsSigner {
     /// Get the key id from this signer
     fn get_kid(&self) -> &str;
 
+    /// Set a new key id for this signer, and enables KID embedding.
+    fn set_kid(&mut self, kid: &str);
+
     /// Get the legacy format key id from this signer. This value will be removed
     /// in a future release.
     fn get_legacy_kid(&self) -> &str {

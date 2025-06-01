@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 pub struct JwsHs256Signer {
     /// If the KID should be embedded during signing
     sign_option_embed_kid: bool,
-    /// The KID of this signer. This is a truncated sha256 digest.
+    /// The KID of this signer. This is a truncated hmac sha256 digest.
     kid: String,
     /// Private Key
     skey: HmacSha256Key,
@@ -124,6 +124,11 @@ impl From<HmacSha256Key> for JwsHs256Signer {
 impl JwsSigner for JwsHs256Signer {
     fn get_kid(&self) -> &str {
         self.kid.as_str()
+    }
+
+    fn set_kid(&mut self, kid: &str) {
+        self.sign_option_embed_kid = true;
+        self.kid = kid.to_string();
     }
 
     fn get_legacy_kid(&self) -> &str {
