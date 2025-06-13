@@ -144,6 +144,11 @@ impl JwsSigner for JwsRs256Signer {
         self.kid.as_str()
     }
 
+    fn set_kid(&mut self, kid: &str) {
+        self.sign_option_embed_kid = true;
+        self.kid = kid.to_string();
+    }
+
     fn get_legacy_kid(&self) -> &str {
         // self.legacy_kid.as_str()
         "to do"

@@ -19,6 +19,12 @@ impl From<Aes256Key> for JweA256KWEncipher {
     }
 }
 
+impl AsRef<Aes256Key> for JweA256KWEncipher {
+    fn as_ref(&self) -> &Aes256Key {
+        &self.wrap_key
+    }
+}
+
 impl JweEncipherOuterA256 for JweA256KWEncipher {
     fn set_header_alg(&self, hdr: &mut JweProtectedHeader) -> Result<(), JwtError> {
         hdr.alg = JweAlg::A256KW;

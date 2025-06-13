@@ -1,6 +1,6 @@
 [package]
 name = "compact_jwt"
-version = "0.5.0-dev"
+version = "0.5.1-dev"
 edition = "2021"
 authors = ["William Brown <william@blackhats.net.au>"]
 description = "Minimal implementation of JWT for OIDC and other applications"
@@ -28,7 +28,7 @@ serde_json = "^1.0.79"
 base64 = "^0.21.5"
 base64urlsafedata = "^0.5.1"
 
-crypto-glue = "^0.1.5"
+crypto-glue = "^0.1.7"
 kanidm-hsm-crypto = "0.3.1"
 
 url = { version = "^2.2.2", features = ["serde"] }

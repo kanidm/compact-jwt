@@ -12,8 +12,8 @@ use crypto_glue::{
 };
 
 /// A JWE outer decipher for RSA-OAEP.
-/// You should prefer [crate::crypto::JweEcdhEsA128KWEncipher] or
-/// [crate::crypto::JweA128KWEncipher]
+/// You should prefer [crate::crypto::JweEcdhEsA256KWEncipher] or
+/// [crate::crypto::JweA256KWEncipher]
 pub struct JweRSAOAEPDecipher {
     rsa_priv_key: RS256PrivateKey,
 }
@@ -64,7 +64,7 @@ impl JweRSAOAEPDecipher {
 }
 
 /// A JWE outer encipher for RSA-OAEP. This type can only encipher.
-/// You should prefer [crate::crypto::JweEcdhEsA128KWEncipher] or [crate::crypto::JweA128KWEncipher]
+/// You should prefer [crate::crypto::JweEcdhEsA256KWEncipher] or [crate::crypto::JweA256KWEncipher]
 pub struct JweRSAOAEPEncipher {
     rsa_pub_key: RS256PublicKey,
 }

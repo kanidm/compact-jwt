@@ -342,6 +342,10 @@ impl JwsSigner for MsOapxbcSessionKeyHs256 {
         JwsSigner::get_kid(&self.hmac_key)
     }
 
+    fn set_kid(&mut self, kid: &str) {
+        JwsSigner::set_kid(&mut self.hmac_key, kid)
+    }
+
     fn get_legacy_kid(&self) -> &str {
         JwsSigner::get_kid(&self.hmac_key)
     }
