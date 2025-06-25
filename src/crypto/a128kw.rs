@@ -2,275 +2,134 @@ use crate::compact::{JweAlg, JweCompact, JweProtectedHeader};
 use crate::jwe::Jwe;
 use crate::traits::*;
 use crate::{JwtError, KID_LEN};
-
-use openssl::aes::{unwrap_key, wrap_key, AesKey};
-use openssl::hash;
-use openssl::rand::rand_bytes;
-
-use std::fmt;
-
-// Do I need some inner type to handle the enc bit?
-
-pub(crate) const KEY_LEN: usize = 16;
-const KW_EXTRA: usize = 8;
+use crypto_glue::{
+    aes128::{self, Aes128Key},
+    aes128kw::{Aes128Kw, Aes128KwWrapped},
+    hmac_s256::{HmacSha256, HmacSha256Key},
+    traits::Mac,
+};
 
 /// A JWE outer encipher and decipher for RFC3394 AES 128 Key Wrapping.
-/// This is the recommended type to use if both sides have pre-agreed
-/// shared keys, or are creating encrypted service tokens.
 #[derive(Clone)]
 pub struct JweA128KWEncipher {
-    /// Mark that the key is ephemeral and shall not be exported.
-    is_ephemeral: bool,
-    /// If the KID should be embedded during signing
-    sign_option_embed_kid: bool,
-    /// The KID of this encryption key. This is a truncated sha256 digest.
     kid: String,
-    /// The wrapping key.
-    wrap_key: [u8; KEY_LEN],
+    wrap_key: Aes128Key,
+    sign_option_embed_kid: bool,
 }
 
-impl fmt::Debug for JweA128KWEncipher {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("JweA128KWEncipher")
-            .field("kid", &self.kid)
-            .finish()
+impl From<Aes128Key> for JweA128KWEncipher {
+    fn from(wrap_key: Aes128Key) -> Self {
+        let kid = kid(&wrap_key);
+        JweA128KWEncipher {
+            wrap_key,
+            kid,
+            sign_option_embed_kid: false,
+        }
     }
 }
 
-impl JweEncipherOuter for JweA128KWEncipher {
-    /// See [JweEncipherOuter]
+impl AsRef<Aes128Key> for JweA128KWEncipher {
+    fn as_ref(&self) -> &Aes128Key {
+        &self.wrap_key
+    }
+}
+
+impl JweEncipherOuterA128 for JweA128KWEncipher {
     fn set_header_alg(&self, hdr: &mut JweProtectedHeader) -> Result<(), JwtError> {
         hdr.alg = JweAlg::A128KW;
         if self.sign_option_embed_kid {
             hdr.kid = Some(self.kid.clone());
         }
-
         Ok(())
     }
 
-    /// See [JweEncipherOuter]
-    fn wrap_key(&self, key_to_wrap: &[u8]) -> Result<Vec<u8>, JwtError> {
-        if key_to_wrap.len() > KEY_LEN {
-            debug!(
-                "Unable to wrap key - key to wrap is longer than the wrapping key {} > {}",
-                key_to_wrap.len(),
-                KEY_LEN
-            );
-            return Err(JwtError::InvalidKey);
-        }
+    fn wrap_key(&self, key_to_wrap: Aes128Key) -> Result<Vec<u8>, JwtError> {
+        let key_wrap = Aes128Kw::new(&self.wrap_key);
+        let mut wrapped_key = Aes128KwWrapped::default();
 
-        let wrapping_key = AesKey::new_encrypt(&self.wrap_key).map_err(|ossl_err| {
-            debug!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
+        key_wrap
+            .wrap(&key_to_wrap, &mut wrapped_key)
+            .map_err(|err| {
+                error!(?err);
+                JwtError::CryptoError
+            })?;
 
-        // Algorithm requires extra space.
-        let mut wrapped_key = vec![0; key_to_wrap.len() + KW_EXTRA];
-
-        wrap_key(&wrapping_key, None, &mut wrapped_key, key_to_wrap).map_err(|ossl_err| {
-            debug!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
-        Ok(wrapped_key)
+        Ok(wrapped_key.to_vec())
     }
 }
 
 impl JweA128KWEncipher {
-    /// Create a new direct A128KW Encipher. The key will be randomly generated.
-    pub fn new() -> Result<Self, JwtError> {
-        let mut wrap_key = [0; KEY_LEN];
-
-        rand_bytes(&mut wrap_key).map_err(|ossl_err| {
-            debug!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
-        Self::try_from(wrap_key)
-    }
-
-    /// Get the Key ID of this encipher
-    pub fn kid(&self) -> &str {
-        self.kid.as_str()
-    }
-
-    /// If this key is not ephemeral, expose the bytes of the AES wrap key. This
-    /// allows the key to be persisted.
-    pub fn key_bytes(&self) -> Result<[u8; KEY_LEN], JwtError> {
-        if self.is_ephemeral {
-            Err(JwtError::UnableToReleaseKey)
-        } else {
-            Ok(self.wrap_key)
-        }
-    }
-
-    /// Enable or disable setting the KID into the header of any encrypted JWE's
-    pub fn set_sign_option_embed_kid(mut self, value: bool) -> Self {
-        self.sign_option_embed_kid = value;
-        self
-    }
-
     /// Generate an ephemeral outer key.
     pub fn generate_ephemeral() -> Result<Self, JwtError> {
-        Self::new().map(|mut key| {
-            key.is_ephemeral = true;
-            key.sign_option_embed_kid = false;
-            key
+        let wrap_key = aes128::new_key();
+        let kid = kid(&wrap_key);
+        Ok(JweA128KWEncipher {
+            wrap_key,
+            kid,
+            sign_option_embed_kid: false,
         })
     }
 
+    /// Set the key identifier for this wrapping key.
+    pub fn set_kid(&mut self, kid: &str) {
+        self.sign_option_embed_kid = true;
+        self.kid = kid.to_string();
+    }
+
+    /// Enable or disable the embeddidng of a key id during encryption
+    pub fn set_sign_option_embed_kid(&mut self, value: bool) {
+        self.sign_option_embed_kid = value
+    }
+
+    /// Generate and return a key identifier for this wrapping key
+    pub fn get_kid(&self) -> &str {
+        self.kid.as_str()
+    }
+
     /// Given a JWE, encipher its content to a compact form.
-    pub fn encipher<E: JweEncipherInner + JweEncipherInnerK128>(
-        &self,
-        jwe: &Jwe,
-    ) -> Result<JweCompact, JwtError> {
+    pub fn encipher<E: JweEncipherInnerA128>(&self, jwe: &Jwe) -> Result<JweCompact, JwtError> {
         let encipher = E::new_ephemeral()?;
         encipher.encipher_inner(self, jwe)
     }
 
     /// Given a JWE in compact form, decipher and authenticate its content.
     pub fn decipher(&self, jwec: &JweCompact) -> Result<Jwe, JwtError> {
-        let wrap_key = AesKey::new_decrypt(&self.wrap_key).map_err(|ossl_err| {
-            debug!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
+        let wrapped_key = Aes128KwWrapped::from_exact_iter(jwec.content_enc_key.iter().copied())
+            .ok_or_else(|| {
+                debug!("Invalid content encryption key length");
+                JwtError::CryptoError
+            })?;
 
-        let expected_cek_key_len = jwec.header.enc.key_len();
-        let mut unwrapped_key = vec![0; expected_cek_key_len];
+        let key_wrap = Aes128Kw::new(&self.wrap_key);
+        let mut key_unwrapped = aes128::Aes128Key::default();
 
-        unwrap_key(&wrap_key, None, &mut unwrapped_key, &jwec.content_enc_key).map_err(
-            |ossl_err| {
-                debug!(?ossl_err);
-                JwtError::OpenSSLError
-            },
-        )?;
+        key_wrap
+            .unwrap(&wrapped_key, &mut key_unwrapped)
+            .map_err(|err| {
+                error!(?err);
+                JwtError::CryptoError
+            })?;
 
-        unwrapped_key.truncate(expected_cek_key_len);
-
-        let payload = jwec
-            .header
-            .enc
-            .decipher_inner(unwrapped_key.as_slice(), jwec)?;
+        let payload = jwec.header.enc.decipher_inner_a128(key_unwrapped, jwec)?;
 
         Ok(Jwe {
             header: jwec.header.clone(),
             payload,
         })
     }
-
-    pub(crate) fn load_ephemeral(wrap_key: [u8; KEY_LEN]) -> Self {
-        JweA128KWEncipher {
-            is_ephemeral: true,
-            sign_option_embed_kid: false,
-            kid: String::default(),
-            wrap_key,
-        }
-    }
 }
 
-impl TryFrom<[u8; KEY_LEN]> for JweA128KWEncipher {
-    type Error = JwtError;
-
-    fn try_from(wrap_key: [u8; KEY_LEN]) -> Result<Self, Self::Error> {
-        let digest = hash::MessageDigest::sha256();
-
-        let kid = hash::hash(digest, &wrap_key)
-            .map(|hashout| {
-                let mut s = hex::encode(hashout);
-                s.truncate(KID_LEN);
-                s
-            })
-            .map_err(|_| JwtError::OpenSSLError)?;
-
-        Ok(JweA128KWEncipher {
-            is_ephemeral: false,
-            sign_option_embed_kid: true,
-            kid,
-            wrap_key,
-        })
-    }
-}
-
-impl TryFrom<&[u8]> for JweA128KWEncipher {
-    type Error = JwtError;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        if value.len() != KEY_LEN {
-            // Wrong key size.
-            return Err(JwtError::InvalidKey);
-        }
-
-        let mut wrap_key = [0; KEY_LEN];
-
-        wrap_key.copy_from_slice(value);
-
-        Self::try_from(wrap_key)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::JweA128KWEncipher;
-    use crate::compact::JweCompact;
-    use base64::{engine::general_purpose, Engine as _};
-    use std::convert::TryFrom;
-    use std::str::FromStr;
-
-    #[test]
-    fn rfc7516_a128kw_validation_example() {
-        // Taken from https://www.rfc-editor.org/rfc/rfc7516.html#appendix-A.3
-        let _ = tracing_subscriber::fmt::try_init();
-
-        let test_jwe = "eyJhbGciOiJBMTI4S1ciLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0.6KB707dM9YTIgHtLvtgWQ8mKwboJW3of9locizkDTHzBC2IlrT1oOQ.AxY8DCtDaGlsbGljb3RoZQ.KDlTtXchhZTGufMYmOYGS4HffxPSUrfmqCHXaI9wOGY.U0m_YmjN04DJvceFICbCVQ";
-        let a128kw_key = general_purpose::URL_SAFE_NO_PAD
-            .decode("GawgguFyGrWKav7AX4VKUg")
-            .expect("Invalid Key");
-
-        let jwec = JweCompact::from_str(test_jwe).unwrap();
-
-        assert!(jwec.to_string() == test_jwe);
-
-        // Check vectors
-        jwec.check_vectors(
-            // Content Encryption Key
-            &[
-                232, 160, 123, 211, 183, 76, 245, 132, 200, 128, 123, 75, 190, 216, 22, 67, 201,
-                138, 193, 186, 9, 91, 122, 31, 246, 90, 28, 139, 57, 3, 76, 124, 193, 11, 98, 37,
-                173, 61, 104, 57,
-            ],
-            // IV
-            &[
-                3, 22, 60, 12, 43, 67, 104, 105, 108, 108, 105, 99, 111, 116, 104, 101,
-            ],
-            // Addition Authenticated Data
-            // &[101, 121, 74, 104, 98, 71, 99, 105, 79, 105, 74, 66, 77, 84, 73, 52, 83, 49, 99, 105, 76, 67, 74, 108, 98, 109, 77, 105, 79, 105, 74, 66, 77, 84, 73, 52, 81, 48, 74, 68, 76, 85, 104, 84, 77, 106, 85, 50, 73, 110, 48],
-            // Cipher Text
-            &[
-                40, 57, 83, 181, 119, 33, 133, 148, 198, 185, 243, 24, 152, 230, 6, 75, 129, 223,
-                127, 19, 210, 82, 183, 230, 168, 33, 215, 104, 143, 112, 56, 102,
-            ],
-            // Authentication Tag
-            &[
-                83, 73, 191, 98, 104, 205, 211, 128, 201, 189, 199, 133, 32, 38, 194, 85,
-            ],
-        );
-
-        assert!(jwec.get_jwk_pubkey_url().is_none());
-        assert!(jwec.get_jwk_pubkey().is_none());
-
-        let a128kw_encipher =
-            JweA128KWEncipher::try_from(a128kw_key.as_slice()).expect("Unable to create encipher");
-
-        let released = a128kw_encipher
-            .decipher(&jwec)
-            .expect("Unable to decipher jwe");
-
-        assert_eq!(
-            released.payload(),
-            &[
-                76, 105, 118, 101, 32, 108, 111, 110, 103, 32, 97, 110, 100, 32, 112, 114, 111,
-                115, 112, 101, 114, 46
-            ]
-        );
-    }
+fn kid(wrap_key: &Aes128Key) -> String {
+    let mut skey = HmacSha256Key::default();
+    let skey_slice = skey.as_mut_slice();
+    let wrap_key_slice = wrap_key.as_slice();
+    let skey_slice_mut = &mut skey_slice[..wrap_key_slice.len()];
+    skey_slice_mut.copy_from_slice(wrap_key_slice);
+    // Key is setup
+    let mut hmac = HmacSha256::new(&skey);
+    hmac.update(b"key identifier");
+    let hashout = hmac.finalize();
+    let mut kid = hex::encode(hashout.into_bytes());
+    kid.truncate(KID_LEN);
+    kid
 }

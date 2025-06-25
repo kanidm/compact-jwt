@@ -2,79 +2,52 @@ use crate::compact::{JweCompact, JweEnc};
 use crate::jwe::Jwe;
 use crate::traits::*;
 use crate::JwtError;
-
-use openssl::symm::Cipher;
-
 use base64::{engine::general_purpose, Engine as _};
-use openssl::rand::rand_bytes;
-
-pub(crate) const KEY_LEN: usize = 32;
-
-// 96 bit iv per Cipher::aes_256_gcm().iv_len()
-const IV_LEN: usize = 12;
-const AUTH_TAG_LEN: usize = 16;
+use crypto_glue::{
+    aes256::{self, Aes256Key},
+    aes256gcm::{self, Aes256Gcm, Aes256GcmNonce, Aes256GcmTag},
+    traits::{AeadInPlace, KeyInit},
+};
 
 /// A JWE inner encipher and decipher for AES 256 GCM.
 #[derive(Clone)]
 pub struct JweA256GCMEncipher {
-    aes_key: [u8; KEY_LEN],
+    aes_key: Aes256Key,
 }
 
-#[cfg(all(test, feature = "msextensions"))]
+#[cfg(test)]
 impl JweA256GCMEncipher {
-    pub(crate) fn raw_key(&self) -> [u8; KEY_LEN] {
-        self.aes_key
+    pub(crate) fn raw_key(&self) -> Aes256Key {
+        self.aes_key.clone()
     }
 }
 
-impl TryFrom<&[u8]> for JweA256GCMEncipher {
-    type Error = JwtError;
-
-    fn try_from(r_aes_key: &[u8]) -> Result<Self, Self::Error> {
-        if r_aes_key.len() != KEY_LEN {
-            return Err(JwtError::InvalidKey);
-        }
-
-        let mut aes_key = [0; KEY_LEN];
-        aes_key.copy_from_slice(r_aes_key);
-
-        Ok(JweA256GCMEncipher { aes_key })
-    }
-}
-
-impl From<&[u8; 32]> for JweA256GCMEncipher {
-    fn from(r_aes_key: &[u8; 32]) -> Self {
-        let mut aes_key = [0; KEY_LEN];
-        aes_key.copy_from_slice(r_aes_key);
-
+impl From<Aes256Key> for JweA256GCMEncipher {
+    fn from(aes_key: Aes256Key) -> Self {
         JweA256GCMEncipher { aes_key }
     }
 }
 
-impl JweEncipherInnerK256 for JweA256GCMEncipher {}
-
-impl JweEncipherInner for JweA256GCMEncipher {
+impl JweEncipherInnerA256 for JweA256GCMEncipher {
     fn new_ephemeral() -> Result<Self, JwtError> {
-        let mut aes_key = [0; KEY_LEN];
-        rand_bytes(&mut aes_key).map_err(|ossl_err| {
-            debug!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
+        let aes_key = aes256::new_key();
         Ok(JweA256GCMEncipher { aes_key })
     }
 
-    fn encipher_inner<O: JweEncipherOuter>(
+    fn encipher_inner<O: JweEncipherOuterA256>(
         &self,
         outer: &O,
         jwe: &Jwe,
     ) -> Result<JweCompact, JwtError> {
+        // Update the header with our details
         let mut header = jwe.header.clone();
         header.enc = JweEnc::A256GCM;
-
         outer.set_header_alg(&mut header)?;
 
-        // Clone the header and update it with our details.
+        // Ensure that our content encryption key can be wrapped before we proceed.
+        let wrapped_content_enc_key = outer.wrap_key(self.aes_key.clone())?;
+
+        // base64 it - this is needed for the authentication step of the encryption.
         let hdr_b64 = serde_json::to_vec(&header)
             .map_err(|e| {
                 debug!(?e);
@@ -82,50 +55,65 @@ impl JweEncipherInner for JweA256GCMEncipher {
             })
             .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(bytes))?;
 
-        let content_enc_key = outer.wrap_key(&self.aes_key)?;
+        // Now setup to encrypt.
 
-        // IV must always be random!
-        let mut iv = vec![0; IV_LEN];
-        rand_bytes(&mut iv).map_err(|ossl_err| {
-            debug!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
+        let cipher = Aes256Gcm::new(&self.aes_key);
+        let nonce = aes256gcm::new_nonce();
 
-        let (ciphertext, authentication_tag) = super::a128gcm::aes_gcm_encipher(
-            Cipher::aes_256_gcm(),
-            AUTH_TAG_LEN,
-            &jwe.payload,
-            hdr_b64.as_bytes(),
-            &self.aes_key,
-            &iv,
-        )?;
+        let associated_data = hdr_b64.as_bytes();
+
+        let mut encryption_data = jwe.payload.clone();
+
+        let authentication_tag = cipher
+            .encrypt_in_place_detached(&nonce, associated_data, encryption_data.as_mut_slice())
+            .map_err(|err| {
+                debug!(?err);
+                JwtError::CryptoError
+            })?;
 
         Ok(JweCompact {
             header,
             hdr_b64,
-            content_enc_key,
-            iv,
-            ciphertext,
-            authentication_tag,
+            content_enc_key: wrapped_content_enc_key,
+            iv: nonce.to_vec(),
+            ciphertext: encryption_data,
+            authentication_tag: authentication_tag.to_vec(),
         })
     }
 }
 
 impl JweA256GCMEncipher {
-    /// The required length for this cipher key
-    pub fn key_len() -> usize {
-        KEY_LEN
-    }
-
     pub(crate) fn decipher_inner(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
-        super::a128gcm::aes_gcm_decipher(
-            Cipher::aes_256_gcm(),
-            &jwec.ciphertext,
-            jwec.hdr_b64.as_bytes(),
-            &self.aes_key,
-            &jwec.iv,
-            &jwec.authentication_tag,
-        )
+        let cipher = Aes256Gcm::new(&self.aes_key);
+
+        let nonce = Aes256GcmNonce::from_exact_iter(jwec.iv.iter().copied()).ok_or_else(|| {
+            debug!("Invalid nonce length");
+            JwtError::CryptoError
+        })?;
+
+        let tag = Aes256GcmTag::from_exact_iter(jwec.authentication_tag.iter().copied())
+            .ok_or_else(|| {
+                debug!("Invalid tag length");
+                JwtError::CryptoError
+            })?;
+
+        let associated_data = jwec.hdr_b64.as_bytes();
+
+        let mut encryption_data = jwec.ciphertext.clone();
+
+        cipher
+            .decrypt_in_place_detached(
+                &nonce,
+                associated_data,
+                encryption_data.as_mut_slice(),
+                &tag,
+            )
+            .map_err(|err| {
+                debug!(?err);
+                JwtError::CryptoError
+            })?;
+
+        Ok(encryption_data)
     }
 }
 

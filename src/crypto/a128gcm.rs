@@ -2,63 +2,45 @@ use crate::compact::{JweCompact, JweEnc};
 use crate::jwe::Jwe;
 use crate::traits::*;
 use crate::JwtError;
-
-use openssl::symm::{Cipher, Crypter, Mode};
-
 use base64::{engine::general_purpose, Engine as _};
-use openssl::rand::rand_bytes;
+use crypto_glue::{
+    aes128::{self, Aes128Key},
+    aes128gcm::{self, Aes128Gcm, Aes128GcmNonce, Aes128GcmTag},
+    traits::{AeadInPlace, KeyInit},
+};
 
-pub(crate) const KEY_LEN: usize = 16;
-// 96 bit iv per Cipher::aes_128_gcm().iv_len()
-const IV_LEN: usize = 12;
-const AUTH_TAG_LEN: usize = 16;
-
-/// A JWE inner encipher and decipher for AES 128 GCM. This is the recommended inner
-/// encryption algorithm to use.
+/// A JWE inner encipher and decipher for AES 128 GCM.
 #[derive(Clone)]
 pub struct JweA128GCMEncipher {
-    aes_key: [u8; KEY_LEN],
+    aes_key: Aes128Key,
 }
 
-impl TryFrom<&[u8]> for JweA128GCMEncipher {
-    type Error = JwtError;
-
-    fn try_from(r_aes_key: &[u8]) -> Result<Self, Self::Error> {
-        if r_aes_key.len() != KEY_LEN {
-            return Err(JwtError::InvalidKey);
-        }
-
-        let mut aes_key = [0; KEY_LEN];
-        aes_key.copy_from_slice(r_aes_key);
-
-        Ok(JweA128GCMEncipher { aes_key })
+impl From<Aes128Key> for JweA128GCMEncipher {
+    fn from(aes_key: Aes128Key) -> Self {
+        JweA128GCMEncipher { aes_key }
     }
 }
 
-impl JweEncipherInnerK128 for JweA128GCMEncipher {}
-
-impl JweEncipherInner for JweA128GCMEncipher {
+impl JweEncipherInnerA128 for JweA128GCMEncipher {
     fn new_ephemeral() -> Result<Self, JwtError> {
-        let mut aes_key = [0; KEY_LEN];
-        rand_bytes(&mut aes_key).map_err(|ossl_err| {
-            debug!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
+        let aes_key = aes128::new_key();
         Ok(JweA128GCMEncipher { aes_key })
     }
 
-    fn encipher_inner<O: JweEncipherOuter>(
+    fn encipher_inner<O: JweEncipherOuterA128>(
         &self,
         outer: &O,
         jwe: &Jwe,
     ) -> Result<JweCompact, JwtError> {
+        // Update the header with our details
         let mut header = jwe.header.clone();
         header.enc = JweEnc::A128GCM;
-
         outer.set_header_alg(&mut header)?;
 
-        // Clone the header and update it with our details.
+        // Ensure that our content encryption key can be wrapped before we proceed.
+        let wrapped_content_enc_key = outer.wrap_key(self.aes_key.clone())?;
+
+        // base64 it - this is needed for the authentication step of the encryption.
         let hdr_b64 = serde_json::to_vec(&header)
             .map_err(|e| {
                 debug!(?e);
@@ -66,149 +48,66 @@ impl JweEncipherInner for JweA128GCMEncipher {
             })
             .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(bytes))?;
 
-        let content_enc_key = outer.wrap_key(&self.aes_key)?;
+        // Now setup to encrypt.
 
-        let mut iv = vec![0; IV_LEN];
-        rand_bytes(&mut iv).map_err(|ossl_err| {
-            debug!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
+        let cipher = Aes128Gcm::new(&self.aes_key);
+        let nonce = aes128gcm::new_nonce();
 
-        let (ciphertext, authentication_tag) = aes_gcm_encipher(
-            Cipher::aes_128_gcm(),
-            AUTH_TAG_LEN,
-            &jwe.payload,
-            hdr_b64.as_bytes(),
-            &self.aes_key,
-            &iv,
-        )?;
+        let associated_data = hdr_b64.as_bytes();
+
+        let mut encryption_data = jwe.payload.clone();
+
+        let authentication_tag = cipher
+            .encrypt_in_place_detached(&nonce, associated_data, encryption_data.as_mut_slice())
+            .map_err(|err| {
+                debug!(?err);
+                JwtError::CryptoError
+            })?;
 
         Ok(JweCompact {
             header,
             hdr_b64,
-            content_enc_key,
-            iv,
-            ciphertext,
-            authentication_tag,
+            content_enc_key: wrapped_content_enc_key,
+            iv: nonce.to_vec(),
+            ciphertext: encryption_data,
+            authentication_tag: authentication_tag.to_vec(),
         })
     }
 }
 
 impl JweA128GCMEncipher {
-    /// The required length for this cipher key
-    pub fn key_len() -> usize {
-        KEY_LEN
-    }
-
     pub(crate) fn decipher_inner(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
-        aes_gcm_decipher(
-            Cipher::aes_128_gcm(),
-            &jwec.ciphertext,
-            jwec.hdr_b64.as_bytes(),
-            &self.aes_key,
-            &jwec.iv,
-            &jwec.authentication_tag,
-        )
+        let cipher = Aes128Gcm::new(&self.aes_key);
+
+        let nonce = Aes128GcmNonce::from_exact_iter(jwec.iv.iter().copied()).ok_or_else(|| {
+            debug!("Invalid nonce length");
+            JwtError::CryptoError
+        })?;
+
+        let tag = Aes128GcmTag::from_exact_iter(jwec.authentication_tag.iter().copied())
+            .ok_or_else(|| {
+                debug!("Invalid tag length");
+                JwtError::CryptoError
+            })?;
+
+        let associated_data = jwec.hdr_b64.as_bytes();
+
+        let mut encryption_data = jwec.ciphertext.clone();
+
+        cipher
+            .decrypt_in_place_detached(
+                &nonce,
+                associated_data,
+                encryption_data.as_mut_slice(),
+                &tag,
+            )
+            .map_err(|err| {
+                debug!(?err);
+                JwtError::CryptoError
+            })?;
+
+        Ok(encryption_data)
     }
-}
-
-pub(crate) fn aes_gcm_encipher(
-    cipher: Cipher,
-    authentication_tag_bytes: usize,
-    plaintext: &[u8],
-    authenticated_data: &[u8],
-    aes_key: &[u8],
-    iv: &[u8],
-) -> Result<(Vec<u8>, Vec<u8>), JwtError> {
-    let block_size = cipher.block_size();
-    let mut ciphertext = vec![0; plaintext.len() + block_size];
-
-    let mut encrypter =
-        Crypter::new(cipher, Mode::Encrypt, aes_key, Some(iv)).map_err(|ossl_err| {
-            error!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
-    // Feed in additional data to be checked. Must be called before update.
-    encrypter
-        .aad_update(authenticated_data)
-        .map_err(|ossl_err| {
-            error!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
-    let mut count = encrypter
-        .update(plaintext, &mut ciphertext)
-        .map_err(|ossl_err| {
-            error!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
-    count += encrypter.finalize(&mut ciphertext).map_err(|ossl_err| {
-        error!(?ossl_err);
-        JwtError::OpenSSLError
-    })?;
-
-    let mut authentication_tag = vec![0; authentication_tag_bytes];
-
-    encrypter
-        .get_tag(&mut authentication_tag)
-        .map_err(|ossl_err| {
-            error!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
-    ciphertext.truncate(count);
-
-    Ok((ciphertext, authentication_tag))
-}
-
-pub(crate) fn aes_gcm_decipher(
-    cipher: Cipher,
-    ciphertext: &[u8],
-    authenticated_data: &[u8],
-    aes_key: &[u8],
-    iv: &[u8],
-    authentication_tag: &[u8],
-) -> Result<Vec<u8>, JwtError> {
-    let block_size = cipher.block_size();
-    let mut plaintext = vec![0; ciphertext.len() + block_size];
-
-    let mut decrypter =
-        Crypter::new(cipher, Mode::Decrypt, aes_key, Some(iv)).map_err(|ossl_err| {
-            error!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
-    decrypter.pad(true);
-    decrypter.set_tag(authentication_tag).map_err(|ossl_err| {
-        error!(?ossl_err);
-        JwtError::OpenSSLError
-    })?;
-
-    // Feed in additional data to be checked. Must be called before update.
-    decrypter
-        .aad_update(authenticated_data)
-        .map_err(|ossl_err| {
-            error!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
-    let mut count = decrypter
-        .update(ciphertext, &mut plaintext)
-        .map_err(|ossl_err| {
-            error!(?ossl_err);
-            JwtError::OpenSSLError
-        })?;
-
-    count += decrypter.finalize(&mut plaintext).map_err(|ossl_err| {
-        error!(?ossl_err);
-        JwtError::OpenSSLError
-    })?;
-
-    plaintext.truncate(count);
-
-    Ok(plaintext)
 }
 
 #[cfg(test)]

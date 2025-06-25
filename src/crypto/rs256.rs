@@ -1,19 +1,23 @@
 //! JWS Signing and Verification Structures
 
-use openssl::{bn, hash, pkey, rsa, sign};
-
-use std::fmt;
-use std::hash::{Hash, Hasher};
-
+use crate::compact::{JwaAlg, Jwk, JwkUse, JwsCompact, ProtectedHeader};
 use crate::error::JwtError;
+use crate::traits::*;
 use crate::KID_LEN;
 use base64::{engine::general_purpose, Engine as _};
-
-use crate::compact::{JwaAlg, Jwk, JwkUse, JwsCompact, ProtectedHeader};
-use crate::traits::*;
-
-const RSA_MIN_SIZE: u32 = 3072;
-const RSA_SIG_SIZE: i32 = 384;
+use crypto_glue::{
+    rsa::{
+        self, BigUint, RS256Digest, RS256PrivateKey, RS256PublicKey, RS256Signature,
+        RS256SigningKey, RS256VerifyingKey,
+    },
+    s256,
+    traits::{
+        Digest, DigestSigner, DigestVerifier, Pkcs8DecodePrivateKey, Pkcs8EncodePrivateKey,
+        PublicKeyParts, SignatureEncoding, SpkiDecodePublicKey, SpkiEncodePublicKey, Zeroizing,
+    },
+};
+use std::fmt;
+use std::hash::{Hash, Hasher};
 
 /// A JWS signer that creates RSA SHA256 signatures.
 #[derive(Clone)]
@@ -24,12 +28,8 @@ pub struct JwsRs256Signer {
     sign_option_embed_kid: bool,
     /// The KID of this validator
     kid: String,
-    /// The Legacy KID of this validator
-    legacy_kid: String,
     /// Private Key
-    skey: rsa::Rsa<pkey::Private>,
-    /// The matching digest.
-    digest: hash::MessageDigest,
+    skey: RS256PrivateKey,
 }
 
 impl fmt::Debug for JwsRs256Signer {
@@ -62,92 +62,59 @@ impl JwsRs256Signer {
         self
     }
 
-    /// Restore this JwsSignerEnum from a DER private key.
-    pub fn from_rs256_der(der: &[u8]) -> Result<Self, JwtError> {
-        let digest = hash::MessageDigest::sha256();
-
-        let legacy_kid = hash::hash(digest, der).map(hex::encode).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
+    /// Create a new secure private key for signing
+    pub fn generate_rs256() -> Result<Self, JwtError> {
+        let skey = rsa::new_key(rsa::MIN_BITS).map_err(|err| {
+            debug!(?err);
+            JwtError::CryptoError
         })?;
 
-        let skey = rsa::Rsa::private_key_from_der(der).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
+        let public = RS256PublicKey::from(&skey);
 
-        let kid = skey
-            .public_key_to_der()
-            .and_then(|der| hash::hash(digest, &der))
-            .map(|hashout| {
-                let mut s = hex::encode(hashout);
-                s.truncate(KID_LEN);
-                s
-            })
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
-            })?;
+        let kid = kid_from_public(&public)?;
 
         Ok(JwsRs256Signer {
             kid,
-            legacy_kid,
             skey,
-            digest,
+            sign_option_embed_jwk: false,
+            sign_option_embed_kid: true,
+        })
+    }
+
+    /// Restore this JwsSignerEnum from a DER private key.
+    pub fn from_rs256_der(der: &[u8]) -> Result<Self, JwtError> {
+        let skey = RS256PrivateKey::from_pkcs8_der(der).map_err(|err| {
+            debug!(?err);
+            JwtError::CryptoError
+        })?;
+
+        let public = RS256PublicKey::from(&skey);
+
+        let kid = kid_from_public(&public)?;
+
+        Ok(JwsRs256Signer {
+            kid,
+            skey,
             sign_option_embed_jwk: false,
             sign_option_embed_kid: true,
         })
     }
 
     /// Export this signer to a DER private key.
-    pub fn private_key_to_der(&self) -> Result<Vec<u8>, JwtError> {
-        self.skey.private_key_to_der().map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })
-    }
-
-    /// Create a new legacy (RSA) private key for signing
-    pub fn generate_legacy_rs256() -> Result<Self, JwtError> {
-        let digest = hash::MessageDigest::sha256();
-
-        let skey = rsa::Rsa::generate(RSA_MIN_SIZE).map_err(|_| JwtError::OpenSSLError)?;
-
-        skey.check_key().map_err(|_| JwtError::OpenSSLError)?;
-
-        let kid = skey
-            .public_key_to_der()
-            .and_then(|der| hash::hash(digest, &der))
-            .map(hex::encode)
-            .map_err(|_| JwtError::OpenSSLError)?;
-
-        let legacy_kid = skey
-            .private_key_to_der()
-            .and_then(|der| hash::hash(digest, &der))
-            .map(hex::encode)
-            .map_err(|_| JwtError::OpenSSLError)?;
-
-        Ok(JwsRs256Signer {
-            kid,
-            legacy_kid,
-            skey,
-            digest,
-            sign_option_embed_jwk: false,
-            sign_option_embed_kid: true,
-        })
+    pub fn private_key_to_der(&self) -> Result<Zeroizing<Vec<u8>>, JwtError> {
+        self.skey
+            .to_pkcs8_der()
+            .map(|der| der.to_bytes())
+            .map_err(|err| {
+                debug!(?err);
+                JwtError::CryptoError
+            })
     }
 
     /// Get the public Jwk from this signer
     pub fn public_key_as_jwk(&self) -> Result<Jwk, JwtError> {
-        let public_key_n = self.skey.n().to_vec_padded(RSA_SIG_SIZE).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-
-        let public_key_e = self.skey.e().to_vec_padded(3).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
+        let public_key_n = self.skey.n().to_bytes_be();
+        let public_key_e = self.skey.e().to_bytes_be();
 
         Ok(Jwk::RSA {
             n: public_key_n.into(),
@@ -168,21 +135,12 @@ impl JwsSignerToVerifier for JwsRs256Signer {
     type Verifier = JwsRs256Verifier;
 
     fn get_verifier(&self) -> Result<Self::Verifier, JwtError> {
-        self.skey
-            .n()
-            .to_owned()
-            .and_then(|n| self.skey.e().to_owned().map(|e| (n, e)))
-            .and_then(|(n, e)| rsa::Rsa::from_public_components(n, e))
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
-            })
-            .map_err(|_| JwtError::OpenSSLError)
-            .map(|pkey| JwsRs256Verifier {
-                kid: self.kid.clone(),
-                pkey,
-                digest: self.digest,
-            })
+        let pkey = RS256PublicKey::from(&self.skey);
+
+        Ok(JwsRs256Verifier {
+            kid: self.kid.clone(),
+            pkey,
+        })
     }
 }
 
@@ -191,8 +149,14 @@ impl JwsSigner for JwsRs256Signer {
         self.kid.as_str()
     }
 
+    fn set_kid(&mut self, kid: &str) {
+        self.sign_option_embed_kid = true;
+        self.kid = kid.to_string();
+    }
+
     fn get_legacy_kid(&self) -> &str {
-        self.legacy_kid.as_str()
+        // self.legacy_kid.as_str()
+        "to do"
     }
 
     fn update_header(&self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
@@ -225,40 +189,24 @@ impl JwsSigner for JwsRs256Signer {
             })
             .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(bytes))?;
 
-        let key = pkey::PKey::from_rsa(self.skey.clone()).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
+        let mut hasher = RS256Digest::new();
 
-        let mut signer = sign::Signer::new(self.digest, &key).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
+        hasher.update(hdr_b64.as_bytes());
+        hasher.update(".".as_bytes());
+        hasher.update(sign_data.payload_b64.as_bytes());
 
-        signer.set_rsa_padding(rsa::Padding::PKCS1).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
+        let signer = RS256SigningKey::new(self.skey.clone());
 
-        signer
-            .update(hdr_b64.as_bytes())
-            .and_then(|_| signer.update(".".as_bytes()))
-            .and_then(|_| signer.update(sign_data.payload_b64.as_bytes()))
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
-            })?;
-
-        let signature = signer.sign_to_vec().map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
+        let signature: RS256Signature = signer.try_sign_digest(hasher).map_err(|err| {
+            debug!(?err);
+            JwtError::CryptoError
         })?;
 
         let jwsc = JwsCompact {
             header: sign_data.header,
             hdr_b64,
             payload_b64: sign_data.payload_b64,
-            signature,
+            signature: signature.to_vec(),
         };
 
         jws.post_process(jwsc)
@@ -278,9 +226,55 @@ pub struct JwsRs256Verifier {
     /// The KID of this validator
     kid: String,
     /// Public Key
-    pkey: rsa::Rsa<pkey::Public>,
-    /// The matching digest.
-    digest: hash::MessageDigest,
+    pkey: RS256PublicKey,
+}
+
+impl TryFrom<RS256PublicKey> for JwsRs256Verifier {
+    type Error = JwtError;
+
+    fn try_from(pkey: RS256PublicKey) -> Result<Self, Self::Error> {
+        let kid = kid_from_public(&pkey)?;
+        Ok(JwsRs256Verifier { kid, pkey })
+    }
+}
+
+impl JwsRs256Verifier {
+    /// Create an RSA-SHA256 verifier from a public key in SPKI DER format.
+    pub fn from_rs256_der(der: &[u8]) -> Result<Self, JwtError> {
+        let pkey = RS256PublicKey::from_public_key_der(der).map_err(|err| {
+            debug!(?err);
+            JwtError::CryptoError
+        })?;
+
+        let kid = kid_from_public(&pkey)?;
+
+        Ok(JwsRs256Verifier { kid, pkey })
+    }
+
+    /// Export the content of this verifier as a public JWK
+    pub fn public_key_as_jwk(&self) -> Result<Jwk, JwtError> {
+        let public_key_n = self.pkey.n().to_bytes_be();
+        let public_key_e = self.pkey.e().to_bytes_be();
+
+        Ok(Jwk::RSA {
+            n: public_key_n.into(),
+            e: public_key_e.into(),
+            alg: Some(JwaAlg::RS256),
+            use_: Some(JwkUse::Sig),
+            kid: Some(self.kid.clone()),
+        })
+    }
+
+    /// Export the content of this public key in SPKI DER format
+    pub fn public_key_to_der(&self) -> Result<Vec<u8>, JwtError> {
+        self.pkey
+            .to_public_key_der()
+            .map_err(|err| {
+                debug!(?err);
+                JwtError::CryptoError
+            })
+            .map(|pkey| pkey.into_vec())
+    }
 }
 
 impl TryFrom<&Jwk> for JwsRs256Verifier {
@@ -295,39 +289,21 @@ impl TryFrom<&Jwk> for JwsRs256Verifier {
                 use_: _,
                 kid,
             } => {
-                let digest = hash::MessageDigest::sha256();
+                let n = BigUint::from_bytes_be(n);
+                let e = BigUint::from_bytes_be(e);
 
-                let nbn = bn::BigNum::from_slice(&n).map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })?;
-                let ebn = bn::BigNum::from_slice(&e).map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
-                })?;
-
-                let pkey = rsa::Rsa::from_public_components(nbn, ebn).map_err(|e| {
-                    debug!(?e);
-                    JwtError::OpenSSLError
+                let pkey = RS256PublicKey::new(n, e).map_err(|err| {
+                    debug!(?err);
+                    JwtError::CryptoError
                 })?;
 
                 let kid = if let Some(kid) = kid.clone() {
                     kid
                 } else {
-                    pkey.public_key_to_der()
-                        .and_then(|der| hash::hash(digest, &der))
-                        .map(|hashout| {
-                            let mut s = hex::encode(hashout);
-                            s.truncate(KID_LEN);
-                            s
-                        })
-                        .map_err(|e| {
-                            debug!(?e);
-                            JwtError::OpenSSLError
-                        })?
+                    kid_from_public(&pkey)?
                 };
 
-                Ok(JwsRs256Verifier { kid, pkey, digest })
+                Ok(JwsRs256Verifier { kid, pkey })
             }
             alg_request => {
                 debug!(?alg_request, "validator algorithm mismatch");
@@ -406,47 +382,39 @@ impl JwsVerifier for JwsRs256Verifier {
             return Err(JwtError::ValidatorAlgMismatch);
         }
 
-        if signed_data.signature_bytes.len() < 256 {
-            debug!("invalid signature length");
-            return Err(JwtError::InvalidSignature);
-        }
-
-        let p = pkey::PKey::from_rsa(self.pkey.clone()).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
+        let signature = RS256Signature::try_from(signed_data.signature_bytes).map_err(|err| {
+            debug!(?err, "invalid signature length");
+            JwtError::InvalidSignature
         })?;
 
-        let mut verifier = sign::Verifier::new(self.digest, &p).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
+        let mut hasher = RS256Digest::new();
+
+        hasher.update(signed_data.hdr_bytes);
+        hasher.update(".".as_bytes());
+        hasher.update(signed_data.payload_bytes);
+
+        let verifier = RS256VerifyingKey::new(self.pkey.clone());
+
+        verifier.verify_digest(hasher, &signature).map_err(|err| {
+            debug!(?err, "invalid signature");
+            JwtError::InvalidSignature
         })?;
 
-        verifier.set_rsa_padding(rsa::Padding::PKCS1).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-
-        verifier
-            .update(signed_data.hdr_bytes)
-            .and_then(|_| verifier.update(".".as_bytes()))
-            .and_then(|_| verifier.update(signed_data.payload_bytes))
-            .map_err(|e| {
-                debug!(?e);
-                JwtError::OpenSSLError
-            })?;
-
-        let valid = verifier.verify(signed_data.signature_bytes).map_err(|e| {
-            debug!(?e);
-            JwtError::OpenSSLError
-        })?;
-
-        if valid {
-            signed_data.release().and_then(|d| jwsc.post_process(d))
-        } else {
-            debug!("invalid signature");
-            Err(JwtError::InvalidSignature)
-        }
+        signed_data.release().and_then(|d| jwsc.post_process(d))
     }
+}
+
+fn kid_from_public(pub_key: &RS256PublicKey) -> Result<String, JwtError> {
+    let mut hasher = s256::Sha256::new();
+    let pkey_der = pub_key.to_public_key_der().map_err(|err| {
+        debug!(?err);
+        JwtError::CryptoError
+    })?;
+    hasher.update(&pkey_der);
+    let hashout = hasher.finalize();
+    let mut kid = hex::encode(hashout);
+    kid.truncate(KID_LEN);
+    Ok(kid)
 }
 
 #[cfg(test)]
@@ -520,7 +488,7 @@ mod tests {
     fn rs256_key_generate_cycle() {
         let _ = tracing_subscriber::fmt::try_init();
         let jws_rs256_signer =
-            JwsRs256Signer::generate_legacy_rs256().expect("failed to construct signer.");
+            JwsRs256Signer::generate_rs256().expect("failed to construct signer.");
 
         let der = jws_rs256_signer
             .private_key_to_der()

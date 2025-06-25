@@ -207,7 +207,7 @@ impl fmt::Display for OidcSigned {
     }
 }
 
-#[cfg(all(feature = "openssl", test))]
+#[cfg(test)]
 mod tests {
     use super::{OidcSubject, OidcToken};
     use crate::crypto::JwsEs256Signer;

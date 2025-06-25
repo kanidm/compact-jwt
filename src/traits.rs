@@ -5,6 +5,8 @@ use crate::compact::{JwsCompact, JwsCompactVerifyData, ProtectedHeader};
 use crate::error::JwtError;
 use crate::jwe::Jwe;
 use crate::jws::{Jws, JwsCompactSign2Data};
+use crypto_glue::aes128::Aes128Key;
+use crypto_glue::aes256::Aes256Key;
 
 /// A trait defining how a JwsSigner will operate.
 ///
@@ -13,9 +15,14 @@ pub trait JwsSigner {
     /// Get the key id from this signer
     fn get_kid(&self) -> &str;
 
+    /// Set a new key id for this signer, and enables KID embedding.
+    fn set_kid(&mut self, kid: &str);
+
     /// Get the legacy format key id from this signer. This value will be removed
     /// in a future release.
-    fn get_legacy_kid(&self) -> &str;
+    fn get_legacy_kid(&self) -> &str {
+        "no legacy kid"
+    }
 
     /// Update thee content of the header with signer specific data
     fn update_header(&self, header: &mut ProtectedHeader) -> Result<(), JwtError>;
@@ -36,7 +43,9 @@ pub trait JwsMutSigner {
 
     /// Get the legacy format key id from this signer. This value will be removed
     /// in a future release.
-    fn get_legacy_kid(&mut self) -> &str;
+    fn get_legacy_kid(&mut self) -> &str {
+        "no legacy kid"
+    }
 
     /// Update thee content of the header with signer specific data
     fn update_header(&mut self, header: &mut ProtectedHeader) -> Result<(), JwtError>;
@@ -65,17 +74,6 @@ pub trait JwsVerifier {
 
     /// Perform the signature verification
     fn verify<V: JwsVerifiable>(&self, _jwsc: &V) -> Result<V::Verified, JwtError>;
-}
-
-/// A trait defining how a JwsVerifier will operate.
-///
-/// Note that due to the design of this api, you can NOT define your own verifier.
-pub trait JwsMutVerifier {
-    /// Get the key id from this verifier
-    fn get_kid(&mut self) -> &str;
-
-    /// Perform the signature verification
-    fn verify<V: JwsVerifiable>(&mut self, _jwsc: &V) -> Result<V::Verified, JwtError>;
 }
 
 /// A trait defining types that can be verified by a [JwsVerifier]
@@ -108,23 +106,18 @@ pub trait JwsSignable {
     fn post_process(&self, value: JwsCompact) -> Result<Self::Signed, JwtError>;
 }
 
-/// A trait defining types that provide outer content encryption key wrapping.
-pub trait JweEncipherOuter {
+/// A trait defining types that provide outer content encryption key wrapping supporting
+/// AES256 Keys used for the inner encryption
+pub trait JweEncipherOuterA256 {
     /// Given a protected header, set the algorithm used by this outer key wrap
     fn set_header_alg(&self, hdr: &mut JweProtectedHeader) -> Result<(), JwtError>;
 
     /// Wrap the provided ephemeral key
-    fn wrap_key(&self, key_to_wrap: &[u8]) -> Result<Vec<u8>, JwtError>;
+    fn wrap_key(&self, wrapping_key: Aes256Key) -> Result<Vec<u8>, JwtError>;
 }
 
-/// A marker trait indicating that this type uses 128 bit keys.
-pub trait JweEncipherInnerK128 {}
-
-/// A marker trait indicating that this type uses 256 bit keys.
-pub trait JweEncipherInnerK256 {}
-
-/// A trait defining types that provide inner content encryption
-pub trait JweEncipherInner {
+/// A trait defining types that provide inner content encryption with AES256 Keys
+pub trait JweEncipherInnerA256 {
     /// Generate a new ephemeral key for this inner encipher. Keys are always
     /// ephemeral with inner types as they are "one use" only.
     fn new_ephemeral() -> Result<Self, JwtError>
@@ -132,7 +125,33 @@ pub trait JweEncipherInner {
         Self: Sized;
 
     /// Encipher the inner content of a jwe
-    fn encipher_inner<O: JweEncipherOuter>(
+    fn encipher_inner<O: JweEncipherOuterA256>(
+        &self,
+        outer: &O,
+        jwe: &Jwe,
+    ) -> Result<JweCompact, JwtError>;
+}
+
+/// A trait defining types that provide outer content encryption key wrapping supporting
+/// AES128 Keys used for the inner encryption
+pub trait JweEncipherOuterA128 {
+    /// Given a protected header, set the algorithm used by this outer key wrap
+    fn set_header_alg(&self, hdr: &mut JweProtectedHeader) -> Result<(), JwtError>;
+
+    /// Wrap the provided ephemeral key
+    fn wrap_key(&self, wrapping_key: Aes128Key) -> Result<Vec<u8>, JwtError>;
+}
+
+/// A trait defining types that provide inner content encryption with AES128 Keys
+pub trait JweEncipherInnerA128 {
+    /// Generate a new ephemeral key for this inner encipher. Keys are always
+    /// ephemeral with inner types as they are "one use" only.
+    fn new_ephemeral() -> Result<Self, JwtError>
+    where
+        Self: Sized;
+
+    /// Encipher the inner content of a jwe
+    fn encipher_inner<O: JweEncipherOuterA128>(
         &self,
         outer: &O,
         jwe: &Jwe,
