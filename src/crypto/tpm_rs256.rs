@@ -2,9 +2,10 @@ use crate::compact::{JwaAlg, JwsCompact, ProtectedHeader};
 use crate::error::JwtError;
 use crate::traits::*;
 use base64::{engine::general_purpose, Engine as _};
+use crypto_glue::traits::SignatureEncoding;
 use kanidm_hsm_crypto::{
-    provider::{Tpm, TpmES256},
-    structures::ES256Key,
+    provider::{Tpm, TpmRS256},
+    structures::RS256Key,
 };
 
 /// A JWS signer that uses a TPM protected key for signing operations.
@@ -13,21 +14,21 @@ use kanidm_hsm_crypto::{
 /// relying on references to the TPM rather than taking ownership of it. This means
 /// unlike other Signer types, you will need to build this struct each time you want
 /// to perform a signing operation in most cases.
-pub struct JwsTpmEs256Signer<'a, T: Tpm + TpmES256> {
+pub struct JwsTpmRs256Signer<'a, T: Tpm + TpmRS256 + ?Sized> {
     kid: String,
     tpm: &'a mut T,
-    id_key: &'a ES256Key,
+    id_key: &'a RS256Key,
 }
 
-impl<'a, T> JwsTpmEs256Signer<'a, T>
+impl<'a, T> JwsTpmRs256Signer<'a, T>
 where
-    T: Tpm + TpmES256,
+    T: Tpm + TpmRS256,
 {
     /// Create a new JwsTpmSigner that will use the provided Identity Key for signing
     /// operations.
-    pub fn new(tpm: &'a mut T, id_key: &'a ES256Key) -> Result<Self, JwtError> {
+    pub fn new(tpm: &'a mut T, id_key: &'a RS256Key) -> Result<Self, JwtError> {
         let kid = tpm
-            .es256_fingerprint(id_key)
+            .rs256_fingerprint(id_key)
             .map(hex::encode)
             .map_err(|_err| JwtError::TpmError)?;
 
@@ -35,16 +36,16 @@ where
     }
 }
 
-impl<T> JwsMutSigner for JwsTpmEs256Signer<'_, T>
+impl<T> JwsMutSigner for JwsTpmRs256Signer<'_, T>
 where
-    T: Tpm + TpmES256,
+    T: Tpm + TpmRS256,
 {
     fn get_kid(&mut self) -> &str {
         self.kid.as_str()
     }
 
     fn update_header(&mut self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
-        header.alg = JwaAlg::ES256;
+        header.alg = JwaAlg::RS256;
 
         // Only set the kid if it's not already set
         if header.kid.is_none() {
@@ -80,7 +81,7 @@ where
 
         let signature = self
             .tpm
-            .es256_sign(self.id_key, &hash_data)
+            .rs256_sign(self.id_key, &hash_data)
             .map_err(|_err| JwtError::TpmError)?;
 
         let jwsc = JwsCompact {
@@ -96,14 +97,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::JwsTpmEs256Signer;
-    use crate::crypto::es256::JwsEs256Verifier;
+    use super::JwsTpmRs256Signer;
+    use crate::crypto::rs256::JwsRs256Verifier;
     use crate::jws::JwsBuilder;
     use crate::traits::*;
     use kanidm_hsm_crypto::{
         provider::BoxedDynTpm,
         provider::SoftTpm,
-        provider::{Tpm, TpmES256},
+        provider::{Tpm, TpmRS256},
         AuthValue,
     };
 
@@ -123,20 +124,20 @@ mod tests {
             .root_storage_key_load(&auth_value, &loadable_storage_key)
             .expect("Unable to load storage key");
 
-        let loadable_es256_key = soft_tpm
-            .es256_create(&root_storage_key)
-            .expect("Unable to create es256 key");
+        let loadable_rs256_key = soft_tpm
+            .rs256_create(&root_storage_key)
+            .expect("Unable to create rs256 key");
 
-        let es256_key = soft_tpm
-            .es256_load(&root_storage_key, &loadable_es256_key)
-            .expect("Unable to load es256 key");
+        let rs256_key = soft_tpm
+            .rs256_load(&root_storage_key, &loadable_rs256_key)
+            .expect("Unable to load rs256 key");
 
-        let es256_pub_key = soft_tpm
-            .es256_public(&es256_key)
-            .expect("Unable to access es256 public key");
+        let rs256_pub_key = soft_tpm
+            .rs256_public(&rs256_key)
+            .expect("Unable to access rs256 public key");
 
         let mut jws_tpm_signer =
-            JwsTpmEs256Signer::new(&mut soft_tpm, &es256_key).expect("failed to construct signer.");
+            JwsTpmRs256Signer::new(&mut soft_tpm, &rs256_key).expect("failed to construct signer.");
 
         // This time we'll add the jwk pubkey and show it being used with the validator.
         let jws = JwsBuilder::from(vec![0, 1, 2, 3, 4])
@@ -147,7 +148,7 @@ mod tests {
 
         let jwsc = jws_tpm_signer.sign(&jws).expect("Failed to sign");
 
-        let verifier = JwsEs256Verifier::from(es256_pub_key);
+        let verifier = JwsRs256Verifier::try_from(rs256_pub_key).unwrap();
 
         let released = verifier.verify(&jwsc).expect("Unable to validate jws");
 
@@ -171,20 +172,20 @@ mod tests {
             .root_storage_key_load(&auth_value, &loadable_storage_key)
             .expect("Unable to load storage key");
 
-        let loadable_es256_key = soft_tpm
-            .es256_create(&root_storage_key)
-            .expect("Unable to create es256 key");
+        let loadable_rs256_key = soft_tpm
+            .rs256_create(&root_storage_key)
+            .expect("Unable to create rs256 key");
 
-        let es256_key = soft_tpm
-            .es256_load(&root_storage_key, &loadable_es256_key)
-            .expect("Unable to load es256 key");
+        let rs256_key = soft_tpm
+            .rs256_load(&root_storage_key, &loadable_rs256_key)
+            .expect("Unable to load rs256 key");
 
-        let es256_pub_key = soft_tpm
-            .es256_public(&es256_key)
-            .expect("Unable to access es256 public key");
+        let rs256_pub_key = soft_tpm
+            .rs256_public(&rs256_key)
+            .expect("Unable to access rs256 public key");
 
         let mut jws_tpm_signer =
-            JwsTpmEs256Signer::new(&mut soft_tpm, &es256_key).expect("failed to construct signer.");
+            JwsTpmRs256Signer::new(&mut soft_tpm, &rs256_key).expect("failed to construct signer.");
 
         // This time we'll add the jwk pubkey and show it being used with the validator.
         let jws = JwsBuilder::from(vec![0, 1, 2, 3, 4])
@@ -197,7 +198,7 @@ mod tests {
 
         let jwsc = jws_tpm_signer.sign(&jws).expect("Failed to sign");
 
-        let verifier = JwsEs256Verifier::from(es256_pub_key);
+        let verifier = JwsRs256Verifier::try_from(rs256_pub_key).unwrap();
 
         let released = verifier.verify(&jwsc).expect("Unable to validate jws");
 

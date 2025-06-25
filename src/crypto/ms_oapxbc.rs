@@ -50,7 +50,7 @@ impl MsOapxbcSessionKey {
         jwec: &JweCompact,
     ) -> Result<Self, JwtError>
     where
-        T: TpmMsExtensions,
+        T: TpmMsExtensions + ?Sized,
     {
         let expected_wrap_key_buffer_len = aes256::key_size();
 
@@ -84,7 +84,7 @@ impl MsOapxbcSessionKey {
         jwec: &JweCompact,
     ) -> Result<Jwe, JwtError>
     where
-        T: TpmMsExtensions,
+        T: TpmMsExtensions + ?Sized,
     {
         let ctx_bytes = if let Some(ctx) = &jwec.header.ctx {
             general_purpose::STANDARD
@@ -139,7 +139,7 @@ impl MsOapxbcSessionKey {
         jwec: &JweCompact,
     ) -> Result<Jwe, JwtError>
     where
-        T: TpmMsExtensions,
+        T: TpmMsExtensions + ?Sized,
     {
         // Alg must be direct.
         if jwec.header.alg != JweAlg::DIRECT {
@@ -183,7 +183,7 @@ impl MsOapxbcSessionKey {
         jwe: &Jwe,
     ) -> Result<JweCompact, JwtError>
     where
-        T: TpmMsExtensions,
+        T: TpmMsExtensions + ?Sized,
     {
         let outer = JweDirect::default();
 
@@ -216,7 +216,7 @@ impl MsOapxbcSessionKey {
         jws: &V,
     ) -> Result<V::Signed, JwtError>
     where
-        T: TpmMsExtensions,
+        T: TpmMsExtensions + ?Sized,
     {
         let hmac_key = match self {
             MsOapxbcSessionKey::A256GCM { sealed_session_key } => {
@@ -242,7 +242,7 @@ impl MsOapxbcSessionKey {
         jws: &V,
     ) -> Result<V::Signed, JwtError>
     where
-        T: TpmMsExtensions,
+        T: TpmMsExtensions + ?Sized,
     {
         let mut nonce = [0; CTX_NONCE_LEN];
         let mut rng = rand::thread_rng();
@@ -277,7 +277,7 @@ impl MsOapxbcSessionKey {
         jwsc: &V,
     ) -> Result<V::Verified, JwtError>
     where
-        T: TpmMsExtensions,
+        T: TpmMsExtensions + ?Sized,
     {
         let hmac_key = if let Some(ctx) = &jwsc.data().header.ctx {
             let ctx_bytes = general_purpose::STANDARD
