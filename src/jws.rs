@@ -78,6 +78,12 @@ impl JwsBuilder {
         self
     }
 
+    /// Set the certificate thumbprint
+    pub fn set_x5t(mut self, thumbprint: &str) -> Self {
+        self.header.x5t = Some(thumbprint.to_string());
+        self
+    }
+
     /// Finalise this builder
     pub fn build(self) -> Jws {
         let JwsBuilder { header, payload } = self;

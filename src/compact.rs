@@ -119,7 +119,7 @@ pub struct ProtectedHeader {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) x5c: Option<Vec<String>>,
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
-    pub(crate) x5t: Option<()>,
+    pub(crate) x5t: Option<String>,
     #[serde(
         skip_deserializing,
         rename = "x5t#S256",
