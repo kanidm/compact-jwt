@@ -12,8 +12,9 @@ use crypto_glue::{
     },
     s256,
     traits::{
-        Digest, DigestSigner, DigestVerifier, Pkcs8DecodePrivateKey, Pkcs8EncodePrivateKey,
-        PublicKeyParts, SignatureEncoding, SpkiDecodePublicKey, SpkiEncodePublicKey, Zeroizing,
+        Digest, DigestSigner, DigestVerifier, Pkcs1DecodeRsaPrivateKey, Pkcs8DecodePrivateKey,
+        Pkcs8EncodePrivateKey, PublicKeyParts, SignatureEncoding, SpkiDecodePublicKey,
+        SpkiEncodePublicKey, Zeroizing,
     },
 };
 use std::fmt;
@@ -83,9 +84,11 @@ impl JwsRs256Signer {
 
     /// Restore this JwsSignerEnum from a DER private key.
     pub fn from_rs256_der(der: &[u8]) -> Result<Self, JwtError> {
-        let skey = RS256PrivateKey::from_pkcs8_der(der).map_err(|err| {
-            debug!(?err);
-            JwtError::CryptoError
+        let skey = RS256PrivateKey::from_pkcs8_der(der).or_else(|pkcs8_err| {
+            RS256PrivateKey::from_pkcs1_der(der).map_err(|pkcs1_err| {
+                debug!(?pkcs1_err, ?pkcs8_err);
+                JwtError::CryptoError
+            })
         })?;
 
         let public = RS256PublicKey::from(&skey);
