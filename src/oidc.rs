@@ -43,8 +43,8 @@ pub enum OidcSubject {
 impl fmt::Display for OidcSubject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            OidcSubject::U(u) => write!(f, "{}", u),
-            OidcSubject::S(s) => write!(f, "{}", s),
+            OidcSubject::U(u) => write!(f, "{u}"),
+            OidcSubject::S(s) => write!(f, "{s}"),
         }
     }
 }
