@@ -29,7 +29,7 @@ base64 = "^0.21.5"
 base64urlsafedata = "^0.5.1"
 
 crypto-glue = "^0.1.7"
-kanidm-hsm-crypto = "0.3.2"
+kanidm-hsm-crypto = "^0.3.2"
 
 url = { version = "^2.2.2", features = ["serde"] }
 uuid = { version = "^1.0.0", features = ["serde"] }
