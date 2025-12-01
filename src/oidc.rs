@@ -71,6 +71,9 @@ pub struct OidcClaims {
     /// The users locale
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
+    /// Last time the profile was updated
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
     /// The scopes assigned to this token
     #[serde(skip_serializing_if = "vec_empty", default)]
     pub scopes: Vec<String>,
