@@ -56,6 +56,18 @@ pub struct OidcClaims {
     /// This is equivalent to a display name, and how the user wishes to be seen or known.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// The nickname
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nickname: Option<String>,
+    /// URL of the End-User's profile page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<Url>,
+    /// URL of the End-User's profile picture.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub picture: Option<Url>,
+    /// URL of the End-User's website.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub website: Option<Url>,
     /// The displayed username. Ie claire or c.example
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preferred_username: Option<String>,
@@ -65,12 +77,27 @@ pub struct OidcClaims {
     /// If the email has been validated.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub email_verified: Option<bool>,
+    /// The users gender.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gender: Option<String>,
+    /// The users birthdate
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub birthdate: Option<String>,
     /// The users timezone
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zoneinfo: Option<String>,
     /// The users locale
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
+    /// End-User's preferred telephone number.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone_number: Option<String>,
+    /// If the phone_number has been validated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone_number_verified: Option<bool>,
+    /// End-User's preferred postal address.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<serde_json::Value>,
     /// Last time the profile was updated
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
