@@ -281,14 +281,15 @@ HMUfpIBvFSDJ3gyICh3WZlXi/EjJKSZp4A==
 
         assert!(chain.len() == 2);
 
-        let trust_root = Certificate::from_pem(gsr1.as_bytes()).unwrap();
+        let trust_root =
+            Certificate::from_pem(gsr1.as_bytes()).expect("Failed to parse trust root");
 
         let current_time = SystemTime::UNIX_EPOCH + Duration::from_secs(1655586820);
 
         let jws_x509_verifier = JwsX509VerifierBuilder::new(&leaf, &chain)
             .add_trust_root(trust_root)
             .build(current_time)
-            .unwrap();
+            .expect("Failed to construct verifier");
 
         let _claims: std::collections::BTreeMap<String, serde_json::value::Value> =
             jws_x509_verifier
@@ -309,9 +310,10 @@ HMUfpIBvFSDJ3gyICh3WZlXi/EjJKSZp4A==
         )
             .expect("Invalid jwsu");
 
-        let jwk = jwsu.get_jwk_pubkey().unwrap();
+        let jwk = jwsu.get_jwk_pubkey().expect("Failed to get JWK public key");
 
-        let jws_es256_verifier = JwsEs256Verifier::try_from(jwk).unwrap();
+        let jws_es256_verifier =
+            JwsEs256Verifier::try_from(jwk).expect("Failed to construct verifier");
 
         let _claims: std::collections::BTreeMap<String, serde_json::value::Value> =
             jws_es256_verifier

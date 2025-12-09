@@ -119,6 +119,7 @@ impl JweA128KWEncipher {
     }
 }
 
+/// Generate a key identifier for an AES 128 wrapping key
 fn kid(wrap_key: &Aes128Key) -> String {
     let mut skey = HmacSha256Key::default();
     let skey_slice = skey.as_mut_slice();

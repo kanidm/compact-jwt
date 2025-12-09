@@ -225,7 +225,7 @@ mod tests {
         let _ = tracing_subscriber::fmt::try_init();
         let test_jws = "eyJ0eXAiOiJKV1QiLA0KICJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS9pc19yb290Ijp0cnVlfQ.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
 
-        let jwsc = JwsCompact::from_str(test_jws).unwrap();
+        let jwsc = JwsCompact::from_str(test_jws).expect("Failed to parse JWS compact");
 
         assert!(jwsc.check_vectors(
             &[
@@ -263,7 +263,7 @@ mod tests {
         let _ = tracing_subscriber::fmt::try_init();
         let test_jws = "eyJ0eXAiOiJKV1QiLA0KICJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS9pc19yb290Ijp0cnVlfQ.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
 
-        let jwsc = JwsCompact::from_str(test_jws).unwrap();
+        let jwsc = JwsCompact::from_str(test_jws).expect("Failed to parse JWS compact");
 
         assert!(jwsc.check_vectors(
             &[

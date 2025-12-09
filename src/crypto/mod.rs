@@ -52,7 +52,7 @@ pub use tpm_rs256::JwsTpmRs256Signer;
 impl JwsCompact {
     fn check_vectors(&self, chk_input: &[u8], chk_sig: &[u8]) -> bool {
         let sign_input = format!("{}.{}", self.hdr_b64, self.payload_b64);
-        chk_input == sign_input.as_bytes() && chk_sig == &self.signature
+        chk_input == sign_input.as_bytes() && chk_sig == self.signature
     }
 }
 
@@ -121,9 +121,9 @@ impl JweCompact {
         chk_cipher: &[u8],
         chk_aad: &[u8],
     ) -> bool {
-        chk_cek == &self.content_enc_key
-            && chk_iv == &self.iv
-            && chk_cipher == &self.ciphertext
-            && chk_aad == &self.authentication_tag
+        chk_cek == self.content_enc_key
+            && chk_iv == self.iv
+            && chk_cipher == self.ciphertext
+            && chk_aad == self.authentication_tag
     }
 }

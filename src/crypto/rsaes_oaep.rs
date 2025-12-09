@@ -146,7 +146,7 @@ mod tests {
 "kLdtIj6GbDks_ApCSTYQtelcNttlKiOyPzMrXHeI-yk1F7-kpDxY4-WY5NWV5KntaEeXS1j82E375xxhWMHXyvjYecPT9fpwR_M9gV8n9Hrh2anTpTD93Dt62ypW3yDsJzBnTnrYu1iwWRgBKrEYY46qAZIrA2xAwnm2X7uGR1hghkqDp0Vqj3kbSCz1XyfCs6_LehBwtxHIyh8Ripy40p24moOAbgxVw3rxT_vlt3UVe4WO3JkJOzlpUf-KTVI2Ptgm-dARxTEtE-id-4OJr0h-K-VFs3VSndVTIznSxfyrj8ILL6MG_Uv8YAu7VILSB3lOW085-4qE3DzgrTjgyQ",
 );
 
-        let jwec = JweCompact::from_str(test_jwe).unwrap();
+        let jwec = JweCompact::from_str(test_jwe).expect("Unable to parse JWE");
 
         assert!(jwec.to_string() == test_jwe);
 
@@ -213,7 +213,7 @@ mod tests {
         let input = vec![1; 256];
         let jweb = JweBuilder::from(input.clone()).build();
 
-        let rsa_priv_key = rsa::new_key(0).unwrap();
+        let rsa_priv_key = rsa::new_key(0).expect("Unable to create rsa key");
 
         let rsa_pub_key = RS256PublicKey::from(&rsa_priv_key);
 
