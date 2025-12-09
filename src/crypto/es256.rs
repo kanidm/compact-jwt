@@ -57,7 +57,7 @@ impl Hash for JwsEs256Signer {
 
 impl JwsEs256Signer {
     #[cfg(test)]
-    /// Test only function
+    /// Create a new signer from the JWK components
     pub fn from_es256_jwk_components(x: &str, y: &str, d: &str) -> Result<Self, JwtError> {
         let x = general_purpose::URL_SAFE_NO_PAD.decode(x).map_err(|e| {
             debug!(?e);

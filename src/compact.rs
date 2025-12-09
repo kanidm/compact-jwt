@@ -284,7 +284,7 @@ impl<'de> Deserialize<'de> for JwsCompact {
 impl JwsVerifiable for JwsCompact {
     type Verified = Jws;
 
-    fn data(&self) -> JwsCompactVerifyData {
+    fn data(&self) -> JwsCompactVerifyData<'_> {
         JwsCompactVerifyData {
             header: &self.header,
             hdr_bytes: self.hdr_b64.as_bytes(),

@@ -49,7 +49,7 @@ impl JwsBuilder {
     }
 
     #[cfg(test)]
-    /// Test only function
+    /// Test function : Set the algorithm to use for this JWS
     pub fn set_alg(mut self, alg: crate::compact::JwaAlg) -> Self {
         self.header.alg = alg;
         self
