@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
+use time::{macros::format_description, Date};
 use url::Url;
 use uuid::Uuid;
 
@@ -53,6 +54,9 @@ impl fmt::Display for OidcSubject {
 /// `https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims`
 #[derive(Debug, Serialize, Clone, Deserialize, PartialEq, Default)]
 pub struct OidcClaims {
+    /// The scopes assigned to this token
+    #[serde(skip_serializing_if = "vec_empty", default)]
+    pub scopes: Vec<String>,
     /// This is equivalent to a display name, and how the user wishes to be seen or known.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -71,9 +75,130 @@ pub struct OidcClaims {
     /// The users locale
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
-    /// The scopes assigned to this token
-    #[serde(skip_serializing_if = "vec_empty", default)]
-    pub scopes: Vec<String>,
+
+    /// Given name(s) or first name(s) of the End-User. Note that in some cultures, people can have multiple given names; all can be present, with the names being separated by space characters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub given_name: Option<String>,
+
+    /// Surname(s) or last name(s) of the End-User. Note that in some cultures, people can have multiple family names or no family name; all can be present, with the names being separated by space characters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub family_name: Option<String>,
+
+    /// Middle name(s) of the End-User. Note that in some cultures, people can have multiple middle names; all can be present, with the names being separated by space characters. Also note that in some cultures, middle names are not used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub middle_name: Option<String>,
+
+    /// Casual name of the End-User that may or may not be the same as the given_name. For instance, a nickname value of Mike might be returned alongside a given_name value of Michael.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nickname: Option<String>,
+
+    /// URL of the End-User's profile page. The contents of this Web page SHOULD be about the End-User.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<Url>,
+
+    /// URL of the End-User's profile picture. This URL MUST refer to an image file (for example, a PNG, JPEG, or GIF image file), rather than to a Web page containing an image. Note that this URL SHOULD specifically reference a profile photo of the End-User suitable for displaying when describing the End-User, rather than an arbitrary photo taken by the End-User.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub picture: Option<Url>,
+
+    /// URL of the End-User's Web page or blog. This Web page SHOULD contain information published by the End-User or an organization that the End-User is affiliated with.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub website: Option<Url>,
+
+    /// End-User's birthday, represented as an [ISO 8601-1](https://openid.net/specs/openid-connect-core-1_0.html#ISO8601-1). Date and time - Representations for information interchange - Part 1: Basic rules,” October 2022. ISO8601‑1 YYYY-MM-DD format. The year MAY be 0000, indicating that it is omitted. To represent only the year, YYYY format is allowed. Note that depending on the underlying platform's date related function, providing just year can result in varying month and day, so the implementers need to take this factor into account to correctly process the dates.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub birthdate: Option<String>,
+
+    /// End-User's preferred telephone number. [E.164](https://openid.net/specs/openid-connect-core-1_0.html#E.164) is RECOMMENDED as the format of this Claim, for example, +1 (425) 555-1212 or +56 (2) 687 2400. If the phone number contains an extension, it is RECOMMENDED that the extension be represented using the RFC 3966 [RFC3966](https://openid.net/specs/openid-connect-core-1_0.html#RFC3966) extension syntax, for example, +1 (604) 555-1234;ext=5678.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone_numer: Option<OidcDate>,
+
+    /// True if the End-User's phone number has been verified; otherwise false. When this Claim Value is true, this means that the OP took affirmative steps to ensure that this phone number was controlled by the End-User at the time the verification was performed. The means by which a phone number is verified is context specific, and dependent upon the trust framework or contractual agreements within which the parties are operating. When true, the phone_number Claim MUST be in E.164 format and any extensions MUST be represented in RFC 3966 format.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone_number_verified: Option<bool>,
+
+    /// End-User's preferred postal address. The value of the address member is a JSON [RFC8259] structure containing some or all of the members defined in [Section 5.1.1](https://openid.net/specs/openid-connect-core-1_0.html#AddressClaim).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<OidcAddress>,
+
+    /// Time the End-User's information was last updated. Its value is a JSON number representing the number of seconds from 1970-01-01T00:00:00Z as measured in UTC until the date/time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<u64>,
+
+    /// End-User's gender. Values defined by this specification are `female` and `male`. Other values MAY be used when neither of the defined values are applicable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gender: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+/// An OIDC date which can either be a full date, or just a year.
+pub enum OidcDate {
+    /// A full date
+    Date(Date),
+    /// A year only
+    Year(u16),
+}
+
+impl<'de> Deserialize<'de> for OidcDate {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s: String = Deserialize::deserialize(deserializer)?;
+        if s.len() == 4 {
+            let year: u16 = s.parse().map_err(serde::de::Error::custom)?;
+            Ok(OidcDate::Year(year))
+        } else {
+            let date = Date::parse(&s, format_description!("[year]-[month]-[day]"))
+                .map_err(serde::de::Error::custom)?;
+            Ok(OidcDate::Date(date))
+        }
+    }
+}
+
+impl Serialize for OidcDate {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            OidcDate::Date(d) => serializer.serialize_str(format!("{}", &d).as_str()),
+            OidcDate::Year(y) => serializer.serialize_str(&format!("{:04}", y)),
+        }
+    }
+}
+
+#[test]
+fn test_serialize_oidc_date() {
+    let d1 = OidcDate::Date(
+        Date::parse("1980-05-12", format_description!("[year]-[month]-[day]"))
+            .expect("Failed to parse date"),
+    );
+    let s1 = serde_json::to_string(&d1).expect("Failed to serialise to JSON");
+    assert_eq!(s1, "\"1980-05-12\"");
+
+    let d2 = OidcDate::Year(1995);
+    let s2 = serde_json::to_string(&d2).expect("Failed to serialise to JSON");
+    assert_eq!(s2, "\"1995\"");
+}
+
+/// From <https://openid.net/specs/openid-connect-core-1_0.html#AddressClaim>
+/// The Address Claim represents a physical mailing address. Implementations MAY return only a subset of the fields of an address, depending upon the information available and the End-User's privacy preferences. For example, the country and region might be returned without returning more fine-grained address information.
+///
+/// Implementations MAY return just the full address as a single string in the formatted sub-field, or they MAY return just the individual component fields using the other sub-fields, or they MAY return both. If both variants are returned, they SHOULD represent the same address, with the formatted address indicating how the component fields are combined.
+#[derive(Debug, Serialize, Clone, Deserialize, PartialEq, Default)]
+pub struct OidcAddress {
+    /// Full mailing address, formatted for display or use on a mailing label. This field MAY contain multiple lines, separated by newlines. Newlines can be represented either as a carriage return/line feed pair ("\r\n") or as a single line feed character ("\n").
+    pub formatted: Option<String>,
+    /// Full street address component, which MAY include house number, street name, Post Office Box, and multi-line extended street address information. This field MAY contain multiple lines, separated by newlines. Newlines can be represented either as a carriage return/line feed pair ("\r\n") or as a single line feed character ("\n").
+    pub street_address: Option<String>,
+    /// City or locality component.
+    pub locality: Option<String>,
+    /// State, province, prefecture, or region component.
+    pub region: Option<String>,
+    /// Zip code or postal code component.
+    pub postal_code: Option<String>,
+    /// Country name component.
+    pub country: Option<String>,
 }
 
 /// An Oidc Token that is being created, or has succeeded in being validated
@@ -218,7 +343,7 @@ mod tests {
     fn test_sign_and_validate() {
         let _ = tracing_subscriber::fmt::try_init();
         let jwt = OidcToken {
-            iss: Url::parse("https://oidc.example.com").unwrap(),
+            iss: Url::parse("https://oidc.example.com").expect("Failed to parse URL"),
             sub: OidcSubject::S("a unique id".to_string()),
             aud: "test".to_string(),
             exp: 0,
