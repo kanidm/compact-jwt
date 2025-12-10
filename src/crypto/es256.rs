@@ -90,7 +90,7 @@ impl JwsEs256Signer {
 
         let public = EcdsaP256PublicKey::from_encoded_point(&ep)
             .into_option()
-            .ok_or_else(|| JwtError::CryptoError)?;
+            .ok_or(JwtError::CryptoError)?;
 
         let skey = EcdsaP256PrivateKey::from_slice(&d).map_err(|err| {
             debug!(?err);

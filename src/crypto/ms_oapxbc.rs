@@ -493,7 +493,7 @@ mod tests {
         let _ = tracing_subscriber::fmt::try_init();
 
         let mut soft_tpm = SoftTpm::default();
-        let auth_value = AuthValue::ephemeral().unwrap();
+        let auth_value = AuthValue::ephemeral().expect("Unable to create ephemeral auth value");
         let loadable_storage_key = soft_tpm
             .root_storage_key_create(&auth_value)
             .expect("Unable to create new storage key");
@@ -502,16 +502,20 @@ mod tests {
             .root_storage_key_load(&auth_value, &loadable_storage_key)
             .expect("Unable to load storage key");
 
-        let loadable_msrsa_key = soft_tpm.rs256_create(&root_storage_key).unwrap();
+        let loadable_msrsa_key = soft_tpm
+            .rs256_create(&root_storage_key)
+            .expect("Unable to create msrsa key");
 
         let msrsa_key = soft_tpm
             .rs256_load(&root_storage_key, &loadable_msrsa_key)
-            .unwrap();
+            .expect("Unable to load msrsa key");
 
-        let rsa_pub_key = soft_tpm.rs256_public(&msrsa_key).unwrap();
+        let rsa_pub_key = soft_tpm
+            .rs256_public(&msrsa_key)
+            .expect("Unable to get RSA public key");
 
-        let (server_key, jwec) =
-            MsOapxbcServerKey::begin_rsa_oaep_key_agreement(rsa_pub_key).unwrap();
+        let (server_key, jwec) = MsOapxbcServerKey::begin_rsa_oaep_key_agreement(rsa_pub_key)
+            .expect("Unable to begin RSA OAEP key agreement");
 
         let client_key = MsOapxbcSessionKey::complete_tpm_rsa_oaep_key_agreement(
             &mut soft_tpm,
@@ -519,7 +523,7 @@ mod tests {
             &msrsa_key,
             &jwec,
         )
-        .unwrap();
+        .expect("Unable to complete RSA OAEP key agreement");
 
         let input = vec![1; 256];
         let jweb = JweBuilder::from(input.clone()).build();
@@ -541,7 +545,7 @@ mod tests {
         let _ = tracing_subscriber::fmt::try_init();
 
         let mut soft_tpm = SoftTpm::default();
-        let auth_value = AuthValue::ephemeral().unwrap();
+        let auth_value = AuthValue::ephemeral().expect("Unable to create ephemeral auth value");
         let loadable_storage_key = soft_tpm
             .root_storage_key_create(&auth_value)
             .expect("Unable to create new storage key");
@@ -550,16 +554,19 @@ mod tests {
             .root_storage_key_load(&auth_value, &loadable_storage_key)
             .expect("Unable to load storage key");
 
-        let loadable_msrsa_key = soft_tpm.rs256_create(&root_storage_key).unwrap();
+        let loadable_msrsa_key = soft_tpm
+            .rs256_create(&root_storage_key)
+            .expect("Unable to create msrsa key");
 
         let msrsa_key = soft_tpm
             .rs256_load(&root_storage_key, &loadable_msrsa_key)
-            .unwrap();
+            .expect("Unable to load msrsa key");
+        let rsa_pub_key = soft_tpm
+            .rs256_public(&msrsa_key)
+            .expect("Unable to get RSA public key");
 
-        let rsa_pub_key = soft_tpm.rs256_public(&msrsa_key).unwrap();
-
-        let (server_key, jwec) =
-            MsOapxbcServerKey::begin_rsa_oaep_key_agreement(rsa_pub_key).unwrap();
+        let (server_key, jwec) = MsOapxbcServerKey::begin_rsa_oaep_key_agreement(rsa_pub_key)
+            .expect("Unable to begin RSA OAEP key agreement");
 
         let client_key = MsOapxbcSessionKey::complete_tpm_rsa_oaep_key_agreement(
             &mut soft_tpm,
@@ -567,7 +574,7 @@ mod tests {
             &msrsa_key,
             &jwec,
         )
-        .unwrap();
+        .expect("Unable to complete RSA OAEP key agreement");
 
         let input = vec![1; 256];
         let jws = JwsBuilder::from(input.clone()).build();
@@ -649,12 +656,12 @@ mod tests {
             180, 161, 83, 195, 85, 135, 24, 224, 121, 20, 228, 3, 47, 17, 209, 55, 54, 214, 227,
             219, 73, 234, 251, 50, 145,
         ])
-        .unwrap();
+        .expect("Unable to create ephemeral auth value");
 
-        let session_key_jwe = JweCompact::from_str("eyJlbmMiOiJBMjU2R0NNIiwiYWxnIjoiUlNBLU9BRVAifQ.U95cslQ5YAV7FuQsTF45pcHpgpKCI8arJlz6IXbsXr2flZ4tpuO39dYHKZUXXrufObnvSe04Yetuk5osnL5E9EX7b3cWKDkLwo-KK7iT6B5i_XVbtUUBE87x3UfL8N-rUxIeW-Pyky5DzbZ7hsEkrbjgM16DTCIFucItvjwfJctL3ZTfUMIUrVDq1FjOhXrwu3Wrodi7sLm84lpLX_VQ7cqfmzPWfr-7FFtmJzj99rWDJPOM6ynucDbTxxjKeoW6Ft4EMna3_qdqw1A9_7PFDXSsprjJSGbbCvYhiSgib3k8JKKXr-uEGqyIERV0ajw-oJLHWUyuuu3EWlQul-urOg.KSGiTmZY4a8E4dRF.Gg.FYVcZT1WdLkRKABMOL5wyA").unwrap();
+        let session_key_jwe = JweCompact::from_str("eyJlbmMiOiJBMjU2R0NNIiwiYWxnIjoiUlNBLU9BRVAifQ.U95cslQ5YAV7FuQsTF45pcHpgpKCI8arJlz6IXbsXr2flZ4tpuO39dYHKZUXXrufObnvSe04Yetuk5osnL5E9EX7b3cWKDkLwo-KK7iT6B5i_XVbtUUBE87x3UfL8N-rUxIeW-Pyky5DzbZ7hsEkrbjgM16DTCIFucItvjwfJctL3ZTfUMIUrVDq1FjOhXrwu3Wrodi7sLm84lpLX_VQ7cqfmzPWfr-7FFtmJzj99rWDJPOM6ynucDbTxxjKeoW6Ft4EMna3_qdqw1A9_7PFDXSsprjJSGbbCvYhiSgib3k8JKKXr-uEGqyIERV0ajw-oJLHWUyuuu3EWlQul-urOg.KSGiTmZY4a8E4dRF.Gg.FYVcZT1WdLkRKABMOL5wyA").expect("Unable to parse session key JWE");
 
         let mut soft_tpm = SoftTpm::default();
-        let auth_value = AuthValue::ephemeral().unwrap();
+        let auth_value = AuthValue::ephemeral().expect("Unable to create ephemeral auth value");
         let loadable_storage_key = soft_tpm
             .root_storage_key_create(&auth_value)
             .expect("Unable to create new storage key");
@@ -663,14 +670,13 @@ mod tests {
             .root_storage_key_load(&auth_value, &loadable_storage_key)
             .expect("Unable to load storage key");
 
-        // let loadable_msrsa_key = soft_tpm.rs256_create(&root_storage_key).unwrap();
         let loadable_msrsa_key = soft_tpm
             .rs256_import(&root_storage_key, rsa_priv_key)
-            .unwrap();
+            .expect("Unable to import msrsa key");
 
         let msrsa_key = soft_tpm
             .rs256_load(&root_storage_key, &loadable_msrsa_key)
-            .unwrap();
+            .expect("Unable to load msrsa key");
 
         let session_key = MsOapxbcSessionKey::complete_tpm_rsa_oaep_key_agreement(
             &mut soft_tpm,
@@ -678,13 +684,13 @@ mod tests {
             &msrsa_key,
             &session_key_jwe,
         )
-        .unwrap();
+        .expect("Unable to complete TPM RSA OAEP key agreement");
 
-        let enc_access_token = JweCompact::from_str("eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIiwiY3R4IjoiVVFvcWtvUldYNVFoNnpTbkV2V09aWVgyTXd1QVB4dkQifQ..uAgdAx7E8-rH7xdQDiJVzg.WRDzuK4NGxFjxdKfnzhcWB_Prx5OxkN5b5XLiPoQtkuZIxCaCAqFAe03QmGz60Io6T3e-LKa3mZ2yD62ZY98957_f7yr8ohFeZfCokwl0M5UpsmeVALEB2d-gLUld3hChFJPXcBwexrNkOnIy2gkqrvvvd_L1HooKQbtD7CXuAdKA1Vhpm4zfqSXOjLqoWcAiybdjd8fUwvgY_W0P_giIJh9qkkOGoF_WXXH8zmQ2ZSk9YmjQXH2LH_VzV9UUmpnRzicx6Wp42IpLEf16YNyO62186Z1GVbchxGV7xY4gT-0bVmjvRrXO91XpM-Jf6hmXXnnp-AfQuqISo3D937TjSiBrCE3MVpb5lJFI3M2Sib3ELez71JEVlqKV4vMY9_xRBnRx9qGFKLpI5rZPk660rgD7Uj6UwyMCodJAJWBycjhc2QekDgVFuyMpuG57u8FdV9wyVaE2STTk0in5f5EoYGzXBIo5QzhMJqvXlm_MjyiG4M3YikfcGIIPODpx7dLL15I-CrHGg2ynOPP0_AEUdkfzM0IXN8KxHoyqGh891LqBMvOyfIKg2gj1FA3S919bLBCvFmh4YLdC1xjHoYayxL44dmL-2vrhJS45nG3LhcTShXHZfeP3IM_qbZ-FFqXnBmj-c9tiEqrTfS1ihHyPAgmpBNWjNBgX2BxCWrwxinMLNeXsosrylUvPuCNTcoEJBIzVmrlw03CZldno3Js7Y_MLuLmYXTU6Kblp0dtz-U7HpCZ3H9L2M5UwbLcBXkxng-86vB3wBA77QkRC5lYuBTS0LSvze_bNzDtB8cZ6eFM57iIwa0NnZp2ocGxEXYs6EBxuqlRjIKyrjndowkbkkXAh4pExFdkQPGPbeN6SKaaGeZkFgegEzZIiCNzXvkT33TlYWXYtUzNwdUlqvI56zlQ2-ZtC2D898mekW3ergJoB0vKNxBqux-d0kJLLH6YidZuA4xl7E3aYXgcDUbgLBlS8PXnsxNLU4lqFg-tx8_MYYCVVFrlsp2_uY6GyS0ooEEWI_FvebyqAGhtJRPiCJkrwcHcTEX9byTuOjI7Axt6eSo6Cg6t3pVOfyY5uBM-Z-s1pxeDiEjl-D9GbxoxnTB-oGYq6P6u4uG6OEByT79sHo1flReOoOLh4MQ4dkaR0OHS6bzZyUjeEIuT6vyuzBWGV8uGlzYYXfX4QujsMTQM-20A8X_84OWq6KwsBJC790VaTdSK0AWWPHMRIDfAgNksr9W9Bnn2mGhDcUrquy8sBaFw6S8qlckG2uM7Rm_QvUxHV-4z_tvhdLObRs_3_dSo15qZTO2pPdCYu89tSkuLg6v-NHb9nPgVztcJdePDYw1ZHwIr0ha_HSjO3zIM36aJ16JN0qh9vcaZVe8KrKka2y9JMi0EZPvMnL9t78IIJB3sDU1ZTluq1KdA-4UnCo_BCo82W74oTcF_peKnaEI9VawsLelZuqH6qNAz510wRc72hIiPb6od4h7m8r5OLNAzmzMSKj3tK6OnHbht52ci5jXcNO9Z_0QW6R72HFPvEUlXjzBsNhM6pg8Zap3U8-dTkMfmblFkHSGu4cwvB-uTUsfGJ9q4QZLaTA_fekAVqHYedhsf20jbtbvA3b3ugLqza3Kb0QIAmO7EfeFmg-qSBZP4prLCyMNZ4IQdyOscJ1LGtFm2rkxNwQyOSqFNmvET81C9lud2TnikD4_6k3_vhpl4hvgMrm0uj9U170RgTi9ZCewwxochnf8qmmi8mFc9b6uFHLtdtAbIC4u8vsVwDG_gyBiVVi68saMgpwwT_ZYDLBA4hJvqM3M9sUB2RJYoBATlT_0WjIRXNBzhp8hdkdqrwERvjBC1cKH2XalPqYHI7aQoTZfKXvJnMTsKVraXiQ6TcWBhbfTyscUAc88O3z-0CRUv0Cn0APcgSUyaKtPQuG3bVKmfh0W8RittX3iPyIKMLsQmugQMqHg5SihIMoshvlrMXnmANwQ0L0qJYtHb2nFR4OoPaL7zE8Jo9vwxS4CaxE13VZt3Xj5_FtAgXaPoq0pVm1I0xJ-B3KkMa65mN_PmuORJGfRqODlr_x0JrDPGvByYVvy11prUPBRM9pOQBa9y3Xintx_xiR-0uVDhmPPdhgkarm074Fkfj7sNxicx2NIOT6QMlh6m_VXAwE0fxEUb_PRBQl-El02PgQcOlZZ1_JGrlxERFcX8cchBZQwmbMCGABHrnChuhoR-l_-aU_oeGVHWjXD_dq57MUmsuXoe2s48X073Y4hhXjedvloOGyod7WFc4VSB0uo3ipKnwkwuarw9b_4q0epU3mhybyQpqDys-qSAPucdyOVf9knttKG4s4zNDffdxPxZLKQfSgNKg11oI0zcrQYIfBDerzRW9VECihy64GWEGZvZ88pgHuDhbva8DtZf8MVLEG9kB3ZpuYXu3vvfgoZ209YdOF-9RoQaQuu1pFGGyVcGHWuELIreUw9uRlKKhwcih_jTqLT6e7S4KtS5Dck3t56npdx9iIauxocbos3sWke88faO5ZhUmc7E5Wy-f-jtFTjm9UaZdGsru1izJEuv.").unwrap();
+        let enc_access_token = JweCompact::from_str("eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIiwiY3R4IjoiVVFvcWtvUldYNVFoNnpTbkV2V09aWVgyTXd1QVB4dkQifQ..uAgdAx7E8-rH7xdQDiJVzg.WRDzuK4NGxFjxdKfnzhcWB_Prx5OxkN5b5XLiPoQtkuZIxCaCAqFAe03QmGz60Io6T3e-LKa3mZ2yD62ZY98957_f7yr8ohFeZfCokwl0M5UpsmeVALEB2d-gLUld3hChFJPXcBwexrNkOnIy2gkqrvvvd_L1HooKQbtD7CXuAdKA1Vhpm4zfqSXOjLqoWcAiybdjd8fUwvgY_W0P_giIJh9qkkOGoF_WXXH8zmQ2ZSk9YmjQXH2LH_VzV9UUmpnRzicx6Wp42IpLEf16YNyO62186Z1GVbchxGV7xY4gT-0bVmjvRrXO91XpM-Jf6hmXXnnp-AfQuqISo3D937TjSiBrCE3MVpb5lJFI3M2Sib3ELez71JEVlqKV4vMY9_xRBnRx9qGFKLpI5rZPk660rgD7Uj6UwyMCodJAJWBycjhc2QekDgVFuyMpuG57u8FdV9wyVaE2STTk0in5f5EoYGzXBIo5QzhMJqvXlm_MjyiG4M3YikfcGIIPODpx7dLL15I-CrHGg2ynOPP0_AEUdkfzM0IXN8KxHoyqGh891LqBMvOyfIKg2gj1FA3S919bLBCvFmh4YLdC1xjHoYayxL44dmL-2vrhJS45nG3LhcTShXHZfeP3IM_qbZ-FFqXnBmj-c9tiEqrTfS1ihHyPAgmpBNWjNBgX2BxCWrwxinMLNeXsosrylUvPuCNTcoEJBIzVmrlw03CZldno3Js7Y_MLuLmYXTU6Kblp0dtz-U7HpCZ3H9L2M5UwbLcBXkxng-86vB3wBA77QkRC5lYuBTS0LSvze_bNzDtB8cZ6eFM57iIwa0NnZp2ocGxEXYs6EBxuqlRjIKyrjndowkbkkXAh4pExFdkQPGPbeN6SKaaGeZkFgegEzZIiCNzXvkT33TlYWXYtUzNwdUlqvI56zlQ2-ZtC2D898mekW3ergJoB0vKNxBqux-d0kJLLH6YidZuA4xl7E3aYXgcDUbgLBlS8PXnsxNLU4lqFg-tx8_MYYCVVFrlsp2_uY6GyS0ooEEWI_FvebyqAGhtJRPiCJkrwcHcTEX9byTuOjI7Axt6eSo6Cg6t3pVOfyY5uBM-Z-s1pxeDiEjl-D9GbxoxnTB-oGYq6P6u4uG6OEByT79sHo1flReOoOLh4MQ4dkaR0OHS6bzZyUjeEIuT6vyuzBWGV8uGlzYYXfX4QujsMTQM-20A8X_84OWq6KwsBJC790VaTdSK0AWWPHMRIDfAgNksr9W9Bnn2mGhDcUrquy8sBaFw6S8qlckG2uM7Rm_QvUxHV-4z_tvhdLObRs_3_dSo15qZTO2pPdCYu89tSkuLg6v-NHb9nPgVztcJdePDYw1ZHwIr0ha_HSjO3zIM36aJ16JN0qh9vcaZVe8KrKka2y9JMi0EZPvMnL9t78IIJB3sDU1ZTluq1KdA-4UnCo_BCo82W74oTcF_peKnaEI9VawsLelZuqH6qNAz510wRc72hIiPb6od4h7m8r5OLNAzmzMSKj3tK6OnHbht52ci5jXcNO9Z_0QW6R72HFPvEUlXjzBsNhM6pg8Zap3U8-dTkMfmblFkHSGu4cwvB-uTUsfGJ9q4QZLaTA_fekAVqHYedhsf20jbtbvA3b3ugLqza3Kb0QIAmO7EfeFmg-qSBZP4prLCyMNZ4IQdyOscJ1LGtFm2rkxNwQyOSqFNmvET81C9lud2TnikD4_6k3_vhpl4hvgMrm0uj9U170RgTi9ZCewwxochnf8qmmi8mFc9b6uFHLtdtAbIC4u8vsVwDG_gyBiVVi68saMgpwwT_ZYDLBA4hJvqM3M9sUB2RJYoBATlT_0WjIRXNBzhp8hdkdqrwERvjBC1cKH2XalPqYHI7aQoTZfKXvJnMTsKVraXiQ6TcWBhbfTyscUAc88O3z-0CRUv0Cn0APcgSUyaKtPQuG3bVKmfh0W8RittX3iPyIKMLsQmugQMqHg5SihIMoshvlrMXnmANwQ0L0qJYtHb2nFR4OoPaL7zE8Jo9vwxS4CaxE13VZt3Xj5_FtAgXaPoq0pVm1I0xJ-B3KkMa65mN_PmuORJGfRqODlr_x0JrDPGvByYVvy11prUPBRM9pOQBa9y3Xintx_xiR-0uVDhmPPdhgkarm074Fkfj7sNxicx2NIOT6QMlh6m_VXAwE0fxEUb_PRBQl-El02PgQcOlZZ1_JGrlxERFcX8cchBZQwmbMCGABHrnChuhoR-l_-aU_oeGVHWjXD_dq57MUmsuXoe2s48X073Y4hhXjedvloOGyod7WFc4VSB0uo3ipKnwkwuarw9b_4q0epU3mhybyQpqDys-qSAPucdyOVf9knttKG4s4zNDffdxPxZLKQfSgNKg11oI0zcrQYIfBDerzRW9VECihy64GWEGZvZ88pgHuDhbva8DtZf8MVLEG9kB3ZpuYXu3vvfgoZ209YdOF-9RoQaQuu1pFGGyVcGHWuELIreUw9uRlKKhwcih_jTqLT6e7S4KtS5Dck3t56npdx9iIauxocbos3sWke88faO5ZhUmc7E5Wy-f-jtFTjm9UaZdGsru1izJEuv.").expect("Invalid JWE");
 
         let decrypted = session_key
             .decipher_prt_v2(&mut soft_tpm, &root_storage_key, &enc_access_token)
-            .unwrap();
+            .expect("Unable to decrypt.");
 
         let expected_payload = b"{\"token_type\":\"Bearer\",\"expires_in\":\"1209599\",\"ext_expires_in\":\"0\",\"expires_on\":\"1708017084\",\"refresh_token\":\"0.AbcAblw1aGMKLUSi7HHMa7PiS4c7qjhtoBdIsnV6MWmI2TvJACY.AgABAAEAAAAmoFfGtYxvRrNriQdPKIZ-AgDs_wUA9P8JhDh2ZGgZJMbl8WvzRwn4FQN698G15Fhng20zMjR1OMFAuR65vnyoEvf7kZdIVik54ljWvg7vG7h23Sret_RYtkAS1MnXKy-eHXQDTuZm-Z5JzqfHZO-3JMChedsjVMJkhU_TpS5hFnN1VW8OLifZNaZMDY0W-iWxeKMQ9wnXlBLaCR8ZgLYYGF7k64N5fK3nYSIexeLkom-cGOP0st08M-N4teht4j811BmJIFkl2AzJEpuUU_DmZHPUyOiK_GXopSehpddw3xwCgZ7DF6rxEjKPP33REQE3LjZAtZWuOtH_9QeKzkD_YyExajvU8-liszws8d0yAvi2W4KeMKfAy8LR05CFGQAB0H380xx3IoBsVykiOLVeWU0eBLDePFKqYQCjXY9N_VTmkPovFwyKK-LuPKmJQ_03p30dk6b6xhJIpiy8G1PiHcObIMD6e8WsdlCbdvVhDk5x65G4ReecCLD0wpVpATVO2k9lJcnUTUugySkQtmW-AJDPsH5Yn-SsG75TZ2F1EB2fWG3DOd0k_HBSzvijostQUl6U0hwzwR2KO5Av7i_1SpQDn8MhgClAqyTwqxYU4g4RdqvadhIq6LWzmkq_T-FzkmIrcRV8nDetEtrdNJcbt0MxfryeByPkH_9F8Sql1YMdSFOatURvgb6WXRxqVEvYr4R7MppzTvuSc07jOMjAiI1DVCnxPHjEtd0NsTWFqQ0UIuOehYeT36v7_3CPhIGPjm6NkjlpPf2xOqHpbRGuGC748FadhdocjMXUzGtqQ6c4sk-tv2JXzQ\",\"refresh_token_expires_in\":1209599,\"id_token\":\"eyJ0eXAiOiJKV1QiLCJhbGciOiJub25lIn0.eyJhdWQiOiIzOGFhM2I4Ny1hMDZkLTQ4MTctYjI3NS03YTMxNjk4OGQ5M2IiLCJpc3MiOiJodHRwczovL3N0cy53aW5kb3dzLm5ldC82ODM1NWM2ZS0wYTYzLTQ0MmQtYTJlYy03MWNjNmJiM2UyNGIvIiwiaWF0IjoxNzA2ODA3MTg0LCJuYmYiOjE3MDY4MDcxODQsImV4cCI6MTcwNjgxMTA4NCwiYW1yIjpbInB3ZCIsInJzYSJdLCJpcGFkZHIiOiI2OS4xNjMuNjYuOTYiLCJuYW1lIjoiVHV4Iiwib2lkIjoiOTBkNjc1ZGYtYmZhOC00ZDc4LThmOGYtN2IxMDQzMTgxYmI2IiwicHdkX3VybCI6Imh0dHBzOi8vcG9ydGFsLm1pY3Jvc29mdG9ubGluZS5jb20vQ2hhbmdlUGFzc3dvcmQuYXNweCIsInJoIjoiMC5BYmNBYmx3MWFHTUtMVVNpN0hITWE3UGlTNGM3cWpodG9CZElzblY2TVdtSTJUdkpBQ1kuIiwic3ViIjoiN1JoODRvOXlzSjZ3bjMwNFBFSTl1UDJ6R2Nzc05jb3lwLWp3YmR5VWxlTSIsInRlbmFudF9kaXNwbGF5X25hbWUiOiJNU0ZUIiwidGlkIjoiNjgzNTVjNmUtMGE2My00NDJkLWEyZWMtNzFjYzZiYjNlMjRiIiwidW5pcXVlX25hbWUiOiJ0dXhAMTBmcDd6Lm9ubWljcm9zb2Z0LmNvbSIsInVwbiI6InR1eEAxMGZwN3oub25taWNyb3NvZnQuY29tIiwidmVyIjoiMS4wIn0.\"}";
         assert!(decrypted.payload == expected_payload);

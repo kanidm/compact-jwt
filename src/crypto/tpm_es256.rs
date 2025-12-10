@@ -151,7 +151,7 @@ mod tests {
 
         let released = verifier.verify(&jwsc).expect("Unable to validate jws");
 
-        assert!(released.payload() == &[0, 1, 2, 3, 4]);
+        assert!(released.payload() == [0, 1, 2, 3, 4]);
     }
 
     #[test]
@@ -161,7 +161,7 @@ mod tests {
         // Setup the tpm
         let mut soft_tpm: BoxedDynTpm = SoftTpm::default().into();
 
-        let auth_value = AuthValue::ephemeral().unwrap();
+        let auth_value = AuthValue::ephemeral().expect("Unable to create ephemeral auth value");
 
         let loadable_storage_key = soft_tpm
             .root_storage_key_create(&auth_value)
@@ -201,6 +201,6 @@ mod tests {
 
         let released = verifier.verify(&jwsc).expect("Unable to validate jws");
 
-        assert!(released.payload() == &[0, 1, 2, 3, 4]);
+        assert!(released.payload() == [0, 1, 2, 3, 4]);
     }
 }

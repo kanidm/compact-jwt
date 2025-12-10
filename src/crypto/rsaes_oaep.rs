@@ -109,7 +109,6 @@ mod tests {
     use crate::jwe::JweBuilder;
     use base64::{engine::general_purpose, Engine as _};
     use crypto_glue::rsa::{self, BigUint, RS256PrivateKey, RS256PublicKey};
-    use std::convert::TryFrom;
     use std::str::FromStr;
 
     fn rsa_from_private_components(n: &str, e: &str, d: &str) -> RS256PrivateKey {
@@ -188,8 +187,7 @@ mod tests {
         assert!(jwec.get_jwk_pubkey_url().is_none());
         assert!(jwec.get_jwk_pubkey().is_none());
 
-        let rsa_oaep_decipher =
-            JweRSAOAEPDecipher::try_from(rsa_priv_key).expect("Unable to create decipher");
+        let rsa_oaep_decipher = JweRSAOAEPDecipher::from(rsa_priv_key);
 
         let released = rsa_oaep_decipher
             .decipher(&jwec)

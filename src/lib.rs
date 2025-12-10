@@ -43,7 +43,7 @@
 //! };
 //!
 //! let oidc = OidcToken {
-//!         iss: Url::parse("https://oidc.example.com").unwrap(),
+//!         iss: Url::parse("https://oidc.example.com").expect("Failed to parse URL"),
 //!         sub: OidcSubject::S("UniqueId".to_string()),
 //! #       aud: "test".to_string(),
 //! #       exp: 0,
@@ -61,10 +61,10 @@
 //!     };
 //!
 //! let mut jws_es256_signer =
-//!     JwsEs256Signer::generate_es256().unwrap();
+//!     JwsEs256Signer::generate_es256().expect("Unable to generate ES256 signer");
 //!
 //! let oidc_signed = jws_es256_signer.sign(&oidc)
-//!     .unwrap();
+//!     .expect("Unable to sign OIDC token");
 //!
 //! // Get the signed formatted token string
 //! let token_str = oidc_signed.to_string();
@@ -77,7 +77,7 @@
 //!
 //! // Assuming we have the token_str, we parse it to an unverified state.
 //! let oidc_unverified = OidcUnverified::from_str(&token_str)
-//!     .unwrap();
+//!     .expect("Unable to parse OIDC token");
 //!
 //! let curtime = SystemTime::now()
 //!     .duration_since(SystemTime::UNIX_EPOCH)
@@ -87,7 +87,7 @@
 //! let oidc_validated = jwk_es256_verifier
 //!     .verify(&oidc_unverified)
 //!     .and_then(|oidc_exp| oidc_exp.verify_exp(curtime))
-//!     .unwrap();
+//!     .expect("Unable to validate OIDC token");
 //!
 //! // Prove we got back the same content.
 //! assert!(oidc_validated == oidc);

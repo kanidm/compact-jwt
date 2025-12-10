@@ -482,9 +482,6 @@ impl FromStr for JweCompact {
                 JwtError::InvalidBase64
             })
             .and_then(|bytes| {
-                // let hdr_str = String::from_utf8(bytes.to_vec()).unwrap();
-                // trace!(%hdr_str);
-
                 serde_json::from_slice(&bytes).map_err(|e| {
                     debug!(?e, "invalid header format - invalid json");
                     JwtError::InvalidHeaderFormat
