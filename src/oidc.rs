@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
+use time::OffsetDateTime;
 use time::{macros::format_description, Date};
 use url::Url;
 use uuid::Uuid;
@@ -106,11 +107,11 @@ pub struct OidcClaims {
 
     /// End-User's birthday, represented as an [ISO 8601-1](https://openid.net/specs/openid-connect-core-1_0.html#ISO8601-1). Date and time - Representations for information interchange - Part 1: Basic rules,” October 2022. ISO8601‑1 YYYY-MM-DD format. The year MAY be 0000, indicating that it is omitted. To represent only the year, YYYY format is allowed. Note that depending on the underlying platform's date related function, providing just year can result in varying month and day, so the implementers need to take this factor into account to correctly process the dates.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub birthdate: Option<String>,
+    pub birthdate: Option<OidcDate>,
 
     /// End-User's preferred telephone number. [E.164](https://openid.net/specs/openid-connect-core-1_0.html#E.164) is RECOMMENDED as the format of this Claim, for example, +1 (425) 555-1212 or +56 (2) 687 2400. If the phone number contains an extension, it is RECOMMENDED that the extension be represented using the RFC 3966 [RFC3966](https://openid.net/specs/openid-connect-core-1_0.html#RFC3966) extension syntax, for example, +1 (604) 555-1234;ext=5678.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub phone_numer: Option<OidcDate>,
+    pub phone_number: Option<String>,
 
     /// True if the End-User's phone number has been verified; otherwise false. When this Claim Value is true, this means that the OP took affirmative steps to ensure that this phone number was controlled by the End-User at the time the verification was performed. The means by which a phone number is verified is context specific, and dependent upon the trust framework or contractual agreements within which the parties are operating. When true, the phone_number Claim MUST be in E.164 format and any extensions MUST be represented in RFC 3966 format.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -121,8 +122,8 @@ pub struct OidcClaims {
     pub address: Option<OidcAddress>,
 
     /// Time the End-User's information was last updated. Its value is a JSON number representing the number of seconds from 1970-01-01T00:00:00Z as measured in UTC until the date/time.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<u64>,
+    #[serde(with = "time::serde::timestamp::option")]
+    pub updated_at: Option<OffsetDateTime>,
 
     /// End-User's gender. Values defined by this specification are `female` and `male`. Other values MAY be used when neither of the defined values are applicable.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -167,20 +168,6 @@ impl Serialize for OidcDate {
     }
 }
 
-#[test]
-fn test_serialize_oidc_date() {
-    let d1 = OidcDate::Date(
-        Date::parse("1980-05-12", format_description!("[year]-[month]-[day]"))
-            .expect("Failed to parse date"),
-    );
-    let s1 = serde_json::to_string(&d1).expect("Failed to serialise to JSON");
-    assert_eq!(s1, "\"1980-05-12\"");
-
-    let d2 = OidcDate::Year(1995);
-    let s2 = serde_json::to_string(&d2).expect("Failed to serialise to JSON");
-    assert_eq!(s2, "\"1995\"");
-}
-
 /// From <https://openid.net/specs/openid-connect-core-1_0.html#AddressClaim>
 /// The Address Claim represents a physical mailing address. Implementations MAY return only a subset of the fields of an address, depending upon the information available and the End-User's privacy preferences. For example, the country and region might be returned without returning more fine-grained address information.
 ///
@@ -188,16 +175,22 @@ fn test_serialize_oidc_date() {
 #[derive(Debug, Serialize, Clone, Deserialize, PartialEq, Default)]
 pub struct OidcAddress {
     /// Full mailing address, formatted for display or use on a mailing label. This field MAY contain multiple lines, separated by newlines. Newlines can be represented either as a carriage return/line feed pair ("\r\n") or as a single line feed character ("\n").
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub formatted: Option<String>,
     /// Full street address component, which MAY include house number, street name, Post Office Box, and multi-line extended street address information. This field MAY contain multiple lines, separated by newlines. Newlines can be represented either as a carriage return/line feed pair ("\r\n") or as a single line feed character ("\n").
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub street_address: Option<String>,
     /// City or locality component.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub locality: Option<String>,
     /// State, province, prefecture, or region component.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub region: Option<String>,
     /// Zip code or postal code component.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub postal_code: Option<String>,
     /// Country name component.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub country: Option<String>,
 }
 
@@ -334,9 +327,14 @@ impl fmt::Display for OidcSigned {
 
 #[cfg(test)]
 mod tests {
-    use super::{OidcSubject, OidcToken};
+    use std::time::Duration;
+
+    use super::*;
     use crate::crypto::JwsEs256Signer;
+    use crate::oidc::OidcAddress;
     use crate::traits::{JwsSigner, JwsSignerToVerifier, JwsVerifier};
+    use crate::OidcClaims;
+    use time::OffsetDateTime;
     use url::Url;
 
     #[test]
@@ -377,5 +375,63 @@ mod tests {
             .expect("Unable to validate oidc exp");
 
         assert!(released == jwt);
+    }
+
+    #[test]
+    fn test_serde_oidc_claims() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let updated_at = Some(OffsetDateTime::UNIX_EPOCH + Duration::from_hours(1));
+        dbg!(&updated_at);
+        let claims = OidcClaims {
+            scopes: vec!["openid".to_string(), "email".to_string()],
+            name: None,
+            preferred_username: None,
+            email: None,
+            email_verified: None,
+            zoneinfo: None,
+            locale: None,
+            given_name: None,
+            family_name: None,
+            middle_name: None,
+            nickname: None,
+            profile: None,
+            picture: None,
+            website: None,
+            birthdate: None,
+            phone_number: None,
+            phone_number_verified: Some(false),
+            address: Some(OidcAddress {
+                formatted: Some("123 Test St\nTestville".to_string()),
+                street_address: None,
+                locality: None,
+                region: None,
+                postal_code: None,
+                country: None,
+            }),
+            updated_at,
+            gender: Some("Test".to_string()),
+        };
+        let ser = serde_json::to_string_pretty(&claims).expect("Failed to serialise claims");
+        tracing::info!("Serialized claims: {}", ser);
+        assert!(
+            !ser.contains(r#""updated_at": ["#),
+            "updated_at should be a number not an array"
+        );
+        assert!(ser.contains(r#""updated_at": 3600,"#));
+        assert!(!ser.contains("region"));
+    }
+
+    #[test]
+    fn test_serialize_oidc_date() {
+        let d1 = OidcDate::Date(
+            Date::parse("1980-05-12", format_description!("[year]-[month]-[day]"))
+                .expect("Failed to parse date"),
+        );
+        let s1 = serde_json::to_string(&d1).expect("Failed to serialise to JSON");
+        assert_eq!(s1, "\"1980-05-12\"");
+
+        let d2 = OidcDate::Year(1995);
+        let s2 = serde_json::to_string(&d2).expect("Failed to serialise to JSON");
+        assert_eq!(s2, "\"1995\"");
     }
 }
