@@ -375,7 +375,7 @@ mod tests {
         let _ = tracing_subscriber::fmt::try_init();
         let test_jws = "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS9pc19yb290Ijp0cnVlfQ.cC4hiUPoj9Eetdgtv3hF80EGrhuB__dzERat0XF9g2VtQgr9PJbu3XOiZj5RZmh7AAuHIm4Bh-0Qc_lF5YKt_O8W2Fp5jujGbds9uJdbF9CUAr7t1dnZcAcQjbKBYNX4BAynRFdiuB--f_nZLgrnbyTyWzO75vRK5h6xBArLIARNPvkSjtQBMHlb1L07Qe7K0GarZRmB_eSN9383LcOLn6_dO--xi12jzDwusC-eOkHWEsqtFZESc6BfI7noOPqvhJ1phCnvWh6IeYI2w9QOYEUipUTI8np6LbgGY9Fs98rqVt5AXLIhWkWywlVmtVrBp0igcN_IoypGlUPQGe77Rw";
 
-        let jwsc = JwsCompact::from_str(test_jws).unwrap();
+        let jwsc = JwsCompact::from_str(test_jws).expect("Failed to parse JWS compact");
 
         assert!(jwsc.to_string() == test_jws);
 
@@ -451,13 +451,18 @@ mod tests {
         assert!(jwsc.get_jwk_pubkey_url().is_none());
 
         let pub_jwk = jwsc.get_jwk_pubkey().expect("No embeded public jwk!");
-        assert!(*pub_jwk == jws_rs256_signer.public_key_as_jwk().unwrap());
+        assert!(
+            *pub_jwk
+                == jws_rs256_signer
+                    .public_key_as_jwk()
+                    .expect("Failed to get public key as JWK")
+        );
 
         let jws_validator = jws_rs256_signer
             .get_verifier()
             .expect("Unable to create validator");
 
         let released = jws_validator.verify(&jwsc).expect("Unable to validate jws");
-        assert!(released.payload() == &[0, 1, 2, 3, 4]);
+        assert!(released.payload() == [0, 1, 2, 3, 4]);
     }
 }

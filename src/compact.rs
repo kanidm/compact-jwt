@@ -284,7 +284,7 @@ impl<'de> Deserialize<'de> for JwsCompact {
 impl JwsVerifiable for JwsCompact {
     type Verified = Jws;
 
-    fn data(&self) -> JwsCompactVerifyData {
+    fn data(&self) -> JwsCompactVerifyData<'_> {
         JwsCompactVerifyData {
             header: &self.header,
             hdr_bytes: self.hdr_b64.as_bytes(),
@@ -482,9 +482,6 @@ impl FromStr for JweCompact {
                 JwtError::InvalidBase64
             })
             .and_then(|bytes| {
-                // let hdr_str = String::from_utf8(bytes.to_vec()).unwrap();
-                // trace!(%hdr_str);
-
                 serde_json::from_slice(&bytes).map_err(|e| {
                     debug!(?e, "invalid header format - invalid json");
                     JwtError::InvalidHeaderFormat

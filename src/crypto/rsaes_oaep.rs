@@ -109,7 +109,6 @@ mod tests {
     use crate::jwe::JweBuilder;
     use base64::{engine::general_purpose, Engine as _};
     use crypto_glue::rsa::{self, BigUint, RS256PrivateKey, RS256PublicKey};
-    use std::convert::TryFrom;
     use std::str::FromStr;
 
     fn rsa_from_private_components(n: &str, e: &str, d: &str) -> RS256PrivateKey {
@@ -146,7 +145,7 @@ mod tests {
 "kLdtIj6GbDks_ApCSTYQtelcNttlKiOyPzMrXHeI-yk1F7-kpDxY4-WY5NWV5KntaEeXS1j82E375xxhWMHXyvjYecPT9fpwR_M9gV8n9Hrh2anTpTD93Dt62ypW3yDsJzBnTnrYu1iwWRgBKrEYY46qAZIrA2xAwnm2X7uGR1hghkqDp0Vqj3kbSCz1XyfCs6_LehBwtxHIyh8Ripy40p24moOAbgxVw3rxT_vlt3UVe4WO3JkJOzlpUf-KTVI2Ptgm-dARxTEtE-id-4OJr0h-K-VFs3VSndVTIznSxfyrj8ILL6MG_Uv8YAu7VILSB3lOW085-4qE3DzgrTjgyQ",
 );
 
-        let jwec = JweCompact::from_str(test_jwe).unwrap();
+        let jwec = JweCompact::from_str(test_jwe).expect("Unable to parse JWE");
 
         assert!(jwec.to_string() == test_jwe);
 
@@ -188,8 +187,7 @@ mod tests {
         assert!(jwec.get_jwk_pubkey_url().is_none());
         assert!(jwec.get_jwk_pubkey().is_none());
 
-        let rsa_oaep_decipher =
-            JweRSAOAEPDecipher::try_from(rsa_priv_key).expect("Unable to create decipher");
+        let rsa_oaep_decipher = JweRSAOAEPDecipher::from(rsa_priv_key);
 
         let released = rsa_oaep_decipher
             .decipher(&jwec)
@@ -213,7 +211,7 @@ mod tests {
         let input = vec![1; 256];
         let jweb = JweBuilder::from(input.clone()).build();
 
-        let rsa_priv_key = rsa::new_key(0).unwrap();
+        let rsa_priv_key = rsa::new_key(0).expect("Unable to create rsa key");
 
         let rsa_pub_key = RS256PublicKey::from(&rsa_priv_key);
 

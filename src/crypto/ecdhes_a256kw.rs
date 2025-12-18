@@ -188,7 +188,9 @@ mod tests {
         let jwe_ecds_a256_de =
             JweEcdhEsA256KWDecipher::generate().expect("Unable to create ecdh es256 decipher");
 
-        let public_key = jwe_ecds_a256_de.public_key().unwrap();
+        let public_key = jwe_ecds_a256_de
+            .public_key()
+            .expect("Unable to get public key");
 
         let jwe_ecds_a256_en = JweEcdhEsA256KWEncipher::generate_ephemeral(public_key)
             .expect("Unable to build wrap key.");
