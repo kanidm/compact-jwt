@@ -213,8 +213,9 @@ fn kid(skey: &HmacSha256Key) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::JwsHs256Signer;
+    use super::{hmac_s256, JwsHs256Signer};
     use crate::compact::JwsCompact;
+    use crate::jws::JwsBuilder;
     use crate::traits::*;
     use base64::{engine::general_purpose, Engine as _};
     use std::convert::TryFrom;
@@ -294,5 +295,48 @@ mod tests {
 
         let released = jws_signer.verify(&jwsc).expect("Unable to validate jws");
         trace!("rel -> {:?}", released);
+    }
+
+    #[test]
+    fn hs256_shortform() {
+        use uuid::Uuid;
+
+        /*
+        use serde::{Serialize, Deserialize};
+        #[derive(Default, Debug, Serialize, Clone, Deserialize, PartialEq)]
+        struct Inner {
+            exp: i64,
+            id: Uuid,
+        }
+        */
+
+        let _ = tracing_subscriber::fmt::try_init();
+
+        let skey = hmac_s256::new_key();
+
+        let mut jws_signer = JwsHs256Signer::from(skey);
+        let mut kid = crate::traits::JwsSigner::get_kid(&jws_signer).to_string();
+        kid.truncate(12);
+        jws_signer.set_kid(&kid);
+
+        let id = Uuid::default();
+        let payload = id.as_bytes().to_vec();
+
+        let jws = JwsBuilder::from(payload)
+            // .set_typ(Some("a1"))
+            .build();
+
+        /*
+        let inner = Inner { exp: i64::MAX, id };
+        let jws = JwsBuilder::into_json(&inner).unwrap()
+            .build();
+        */
+
+        let jwsc = jws_signer.sign(&jws).expect("Failed to sign");
+
+        warn!(?jwsc, length = %jwsc.to_string().len());
+        warn!(%jwsc);
+
+        assert!(jwsc.to_string().len() < 128);
     }
 }

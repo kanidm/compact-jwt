@@ -121,7 +121,8 @@ pub use crate::jwt::{Jwt, JwtSigned, JwtUnverified};
 pub use crate::oidc::{OidcClaims, OidcSigned, OidcSubject, OidcToken, OidcUnverified};
 pub use crate::traits::{JwsSigner, JwsSignerToVerifier, JwsVerifier};
 
-const KID_LEN: usize = 32;
+// 96 bits is more than enough to uniquely ID a key
+const KID_LEN: usize = 12;
 
 pub(crate) fn btreemap_empty(
     m: &std::collections::BTreeMap<String, serde_json::value::Value>,

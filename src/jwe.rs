@@ -65,19 +65,3 @@ impl Jwe {
         serde_json::from_slice(self.payload())
     }
 }
-
-mod tests {
-    use serde::{Deserialize, Serialize};
-
-    #[allow(dead_code)]
-    #[derive(Default, Debug, Serialize, Clone, Deserialize, PartialEq)]
-    struct CustomExtension {
-        my_exten: String,
-    }
-
-    #[test]
-    fn test_encrypt_and_decrypt() {
-
-        // TODO: work out if this is just not implemented yet, or if it's designed to trigger something weird?
-    }
-}
