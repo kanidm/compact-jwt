@@ -301,15 +301,6 @@ mod tests {
     fn hs256_shortform() {
         use uuid::Uuid;
 
-        /*
-        use serde::{Serialize, Deserialize};
-        #[derive(Default, Debug, Serialize, Clone, Deserialize, PartialEq)]
-        struct Inner {
-            exp: i64,
-            id: Uuid,
-        }
-        */
-
         let _ = tracing_subscriber::fmt::try_init();
 
         let skey = hmac_s256::new_key();
@@ -325,12 +316,6 @@ mod tests {
         let jws = JwsBuilder::from(payload)
             // .set_typ(Some("a1"))
             .build();
-
-        /*
-        let inner = Inner { exp: i64::MAX, id };
-        let jws = JwsBuilder::into_json(&inner).unwrap()
-            .build();
-        */
 
         let jwsc = jws_signer.sign(&jws).expect("Failed to sign");
 
