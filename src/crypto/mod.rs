@@ -33,7 +33,7 @@ mod ms_oapxbc;
 pub use es256::{JwsEs256Signer, JwsEs256Verifier};
 pub use hs256::JwsHs256Signer;
 pub use rs256::{JwsRs256Signer, JwsRs256Verifier};
-pub use x509::{JwsX509Verifier, JwsX509VerifierBuilder};
+pub use x509::{JwsX509Signer, JwsX509Verifier, JwsX509VerifierBuilder};
 
 pub use a128gcm::JweA128GCMEncipher;
 pub use a128kw::JweA128KWEncipher;

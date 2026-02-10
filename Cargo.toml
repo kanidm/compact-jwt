@@ -25,7 +25,7 @@ all-features = true
 [dependencies]
 base64 = "^0.22.1"
 base64urlsafedata = "^0.5.1"
-crypto-glue = "^0.1.7"
+crypto-glue = "^0.1.12"
 hex = "0.4"
 kanidm-hsm-crypto = "^0.3.2"
 openssl = { version = "^0.10.38", optional = true }

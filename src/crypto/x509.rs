@@ -2,12 +2,16 @@
 
 // use crate::compact::JwaAlg;
 
+use crate::compact::ProtectedHeader;
 use crate::error::JwtError;
 use crate::traits::*;
-use crate::KID_LEN;
+use crate::{JwsCompact, KID_LEN};
+use base64::engine::general_purpose;
+use base64::Engine;
 use crypto_glue::{
+    ecdsa_p384::{EcdsaP384Digest, EcdsaP384PrivateKey, EcdsaP384Signature, EcdsaP384SigningKey},
     s256,
-    traits::Digest,
+    traits::{Digest, DigestSigner, EncodeDer, SignatureEncoding},
     x509::{x509_verify_signature, Certificate, SubjectKeyIdentifier, X509Store},
 };
 use std::time::SystemTime;
@@ -112,6 +116,98 @@ impl JwsVerifier for JwsX509Verifier {
         })?;
 
         signed_data.release().and_then(|d| jwsc.post_process(d))
+    }
+}
+
+/// A builder for a verifier that will be rooted in a trusted ca chain.
+#[derive(Clone)]
+pub struct JwsX509Signer<K> {
+    kid: String,
+    signer: K,
+    leaf: Certificate,
+    chain: Vec<Certificate>,
+}
+
+impl<K> JwsX509Signer<K> {
+    /// Create a new X509 JWS Signer using this Key and Certificate.
+    pub fn new(signer: K, leaf: &Certificate, chain: &[Certificate]) -> Self {
+        let kid = certificate_to_kid(leaf);
+
+        Self {
+            kid,
+            signer,
+            leaf: leaf.clone(),
+            chain: chain.to_vec(),
+        }
+    }
+}
+
+impl JwsSigner for JwsX509Signer<EcdsaP384PrivateKey> {
+    fn get_kid(&self) -> &str {
+        self.kid.as_str()
+    }
+
+    fn set_kid(&mut self, kid: &str) {
+        self.kid = kid.to_string();
+    }
+
+    fn update_header(&self, header: &mut ProtectedHeader) -> Result<(), JwtError> {
+        // Embed the x5c/leaf
+        let x5c = std::iter::once(&self.leaf)
+            .chain(self.chain.iter())
+            .map(|cert| {
+                Certificate::to_der(cert)
+                    .map(|bytes| general_purpose::STANDARD.encode(bytes))
+                    .map_err(|err| {
+                        debug!(?err);
+                        JwtError::CryptoError
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        header.x5c = Some(x5c);
+
+        Ok(())
+    }
+
+    fn sign<V: JwsSignable>(&self, jws: &V) -> Result<V::Signed, JwtError> {
+        let mut sign_data = jws.data()?;
+
+        // Let the signer update the header as required.
+        self.update_header(&mut sign_data.header)?;
+
+        let hdr_b64 = serde_json::to_vec(&sign_data.header)
+            .map_err(|e| {
+                debug!(?e);
+                JwtError::InvalidHeaderFormat
+            })
+            .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(bytes))?;
+
+        let mut hasher = EcdsaP384Digest::new();
+
+        hasher.update(hdr_b64.as_bytes());
+        hasher.update(".".as_bytes());
+        hasher.update(sign_data.payload_b64.as_bytes());
+
+        let signer = EcdsaP384SigningKey::from(&self.signer);
+
+        let signature: EcdsaP384Signature = signer.try_sign_digest(hasher).map_err(|err| {
+            debug!(?err);
+            JwtError::CryptoError
+        })?;
+
+        let jwsc = JwsCompact {
+            header: sign_data.header,
+            hdr_b64,
+            payload_b64: sign_data.payload_b64,
+            signature: signature.to_der().to_vec(),
+        };
+
+        jws.post_process(jwsc)
+    }
+
+    fn set_sign_option_embed_kid(&self, _value: bool) -> Self {
+        self.clone()
     }
 }
 
