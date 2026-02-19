@@ -233,6 +233,8 @@ impl JwsSigner for JwsEs256Signer {
         // Let the signer update the header as required.
         self.update_header(&mut sign_data.header)?;
 
+        debug!(json = ?serde_json::to_string(&sign_data.header));
+
         let hdr_b64 = serde_json::to_vec(&sign_data.header)
             .map_err(|e| {
                 debug!(?e);

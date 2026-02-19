@@ -122,7 +122,11 @@ pub struct OidcClaims {
     pub address: Option<OidcAddress>,
 
     /// Time the End-User's information was last updated. Its value is a JSON number representing the number of seconds from 1970-01-01T00:00:00Z as measured in UTC until the date/time.
-    #[serde(with = "time::serde::timestamp::option")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "time::serde::timestamp::option"
+    )]
     pub updated_at: Option<OffsetDateTime>,
 
     /// End-User's gender. Values defined by this specification are `female` and `male`. Other values MAY be used when neither of the defined values are applicable.
@@ -243,7 +247,10 @@ impl JwsSignable for OidcToken {
     type Signed = OidcSigned;
 
     fn data(&self) -> Result<JwsCompactSign2Data, JwtError> {
-        let mut jwts = Jws::into_json(self).map_err(|_| JwtError::InvalidJwt)?;
+        let mut jwts = Jws::into_json(self).map_err(|err| {
+            debug!(?err, "Failed to serialise OIDC token");
+            JwtError::InvalidJwt
+        })?;
 
         jwts.set_typ(Some("JWT"));
 
@@ -288,7 +295,10 @@ impl JwsVerifiable for OidcUnverified {
     }
 
     fn post_process(&self, value: Jws) -> Result<Self::Verified, JwtError> {
-        let oidc: OidcToken = value.from_json().map_err(|_| JwtError::InvalidJwt)?;
+        let oidc: OidcToken = value.from_json().map_err(|err| {
+            debug!(?err, "Failed to deserialise OIDC token");
+            JwtError::InvalidJwt
+        })?;
         Ok(OidcExpUnverified { oidc })
     }
 }
@@ -325,6 +335,12 @@ impl fmt::Display for OidcSigned {
     }
 }
 
+impl fmt::Display for OidcUnverified {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.jwsc.fmt(f)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -358,6 +374,8 @@ mod tests {
             claims: Default::default(),
         };
 
+        debug!(?jwt);
+
         let jws_es256_signer =
             JwsEs256Signer::generate_es256().expect("failed to construct signer.");
         let jwk_es256_verifier = jws_es256_signer
@@ -366,7 +384,11 @@ mod tests {
 
         let jwts = jws_es256_signer.sign(&jwt).expect("failed to sign jwt");
 
+        debug!(%jwts);
+
         let jwtu = jwts.invalidate();
+
+        debug!(%jwtu);
 
         let released = jwk_es256_verifier
             .verify(&jwtu)
