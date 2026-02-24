@@ -187,6 +187,12 @@ impl JwsEs256Signer {
             kid: Some(kid),
         })
     }
+
+    /// Manually override and set the key id that should be used in signatures.
+    pub fn set_kid(&mut self, kid: &str) {
+        self.sign_option_legacy_kid = false;
+        self.kid = kid.to_string();
+    }
 }
 
 impl JwsSignerToVerifier for JwsEs256Signer {
