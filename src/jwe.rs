@@ -19,6 +19,15 @@ impl From<Vec<u8>> for JweBuilder {
 }
 
 impl JweBuilder {
+    /// Create a JWE from a serialisable type. This assumes you want to encode
+    /// the input value with json.
+    pub fn into_json<T: Serialize>(value: &T) -> Result<Self, serde_json::Error> {
+        serde_json::to_vec(value).map(|payload| JweBuilder {
+            header: JweProtectedHeader::default(),
+            payload,
+        })
+    }
+
     /// Set the content type of this JWE
     pub fn set_typ(mut self, typ: Option<&str>) -> Self {
         self.header.typ = typ.map(|s| s.to_string());
@@ -28,6 +37,12 @@ impl JweBuilder {
     /// Set the content type of the payload
     pub fn set_cty(mut self, cty: Option<&str>) -> Self {
         self.header.cty = cty.map(|s| s.to_string());
+        self
+    }
+
+    /// Set the OAuth2 Client ID
+    pub fn set_client_id(mut self, client_id: Option<&str>) -> Self {
+        self.header.client_id = client_id.map(|s| s.to_string());
         self
     }
 
@@ -46,9 +61,14 @@ pub struct Jwe {
 }
 
 impl Jwe {
-    /// Get the bytes of the payload of this JWS
+    /// Get the bytes of the payload of this JWE
     pub fn payload(&self) -> &[u8] {
         &self.payload
+    }
+
+    /// View the authenticated header content
+    pub fn header(&self) -> &JweProtectedHeader {
+        &self.header
     }
 
     /// Create a JWE from a serialisable type. This assumes you want to encode

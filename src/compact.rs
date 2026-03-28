@@ -96,41 +96,59 @@ pub enum JwaAlg {
     HS256,
 }
 
-/// A header that will be signed and embedded in the Jws
+/// A header that will be signed and embedded in the Jws. For defined claims see
+/// the [IANA JOSE Registry](https://www.iana.org/assignments/jose/jose.xhtml)
 #[derive(Debug, Serialize, Clone, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub struct ProtectedHeader {
-    pub(crate) alg: JwaAlg,
+    /// The encryption algorithm used in this JWS
+    pub alg: JwaAlg,
+    /// JWS Key Set URL
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) jku: Option<Url>,
-    // https://datatracker.ietf.org/doc/html/rfc7517
+    pub jku: Option<Url>,
+    /// The JWK that signs this JWS
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) jwk: Option<Jwk>,
+    pub jwk: Option<Jwk>,
+    /// Key Identifier String
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) kid: Option<String>,
+    pub kid: Option<String>,
+    /// Criticality of this header and processing it's content
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) crit: Option<Vec<String>>,
+    pub crit: Option<Vec<String>>,
+    /// Type
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) typ: Option<String>,
+    pub typ: Option<String>,
+    /// Content
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) cty: Option<String>,
+    pub cty: Option<String>,
 
+    /// X509 URL
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
-    pub(crate) x5u: Option<()>,
+    pub x5u: Option<()>,
+    /// X509 Chain
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) x5c: Option<Vec<String>>,
+    pub x5c: Option<Vec<String>>,
+    /// X509 S1 Thumbprint
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
-    pub(crate) x5t: Option<String>,
+    pub x5t: Option<String>,
     #[serde(
         skip_deserializing,
         rename = "x5t#S256",
         skip_serializing_if = "Option::is_none"
     )]
-    pub(crate) x5t_s256: Option<()>,
+    /// X509 S256 Thumbprint
+    pub x5t_s256: Option<()>,
+    /// Context
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) ctx: Option<String>,
+    pub ctx: Option<String>,
+    /// Microsoft Extension - JWS usage
     #[cfg(feature = "msextensions")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) r#use: Option<String>,
+    pub r#use: Option<String>,
+
+    /// OAuth2 Extension - the client_id that issued this JWS
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
 }
 
 /// A Compact JWS that is able to be verified or stringified for transmission
@@ -163,6 +181,12 @@ impl JwsCompact {
     /// Get the embedded public key used to sign this Jws, if present.
     pub fn get_jwk_pubkey(&self) -> Option<&Jwk> {
         self.header.jwk.as_ref()
+    }
+
+    /// View the content of the JWS header. At this point the content is UNVERIFIED
+    /// and may NOT BE TRUSTED.
+    pub fn header(&self) -> &ProtectedHeader {
+        &self.header
     }
 }
 
@@ -375,46 +399,63 @@ pub enum JweEnc {
     // A128CBC_HS256,
 }
 
-/// A header that will be signed and embedded in the Jws
+/// A header that will be signed and embedded in the Jwe. For defined claims see
+/// the [IANA JOSE Registry](https://www.iana.org/assignments/jose/jose.xhtml)
 #[derive(Debug, Serialize, Clone, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub struct JweProtectedHeader {
-    pub(crate) alg: JweAlg,
+    /// The key wrap/derivation algorithm in use protecting the payload key
+    pub alg: JweAlg,
 
-    pub(crate) enc: JweEnc,
+    /// The inner encryption of this JWE
+    pub enc: JweEnc,
 
-    // https://www.rfc-editor.org/rfc/rfc7518#section-4.6.1.1
+    /// Ephemeral Public Key
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) epk: Option<Jwk>,
+    pub epk: Option<Jwk>,
 
-    // zip
+    /// JWS Key Set URL
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) jku: Option<Url>,
-    // https://datatracker.ietf.org/doc/html/rfc7517
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) jwk: Option<Jwk>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) kid: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) crit: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) typ: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) cty: Option<String>,
+    pub jku: Option<Url>,
 
+    /// Embedded JWK
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jwk: Option<Jwk>,
+    ///Key Identifier String
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kid: Option<String>,
+    /// Criticality of this header and processing it's content
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crit: Option<Vec<String>>,
+    /// Type
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub typ: Option<String>,
+    /// Content
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cty: Option<String>,
+
+    /// X509 URL
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
-    pub(crate) x5u: Option<()>,
+    pub x5u: Option<()>,
+    /// X509 Chain
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) x5c: Option<Vec<String>>,
+    pub x5c: Option<Vec<String>>,
+    /// X509 S1 Thumbprint
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
-    pub(crate) x5t: Option<()>,
+    pub x5t: Option<()>,
+    /// X509 S256 Thumbprint
     #[serde(
         skip_deserializing,
         rename = "x5t#S256",
         skip_serializing_if = "Option::is_none"
     )]
-    pub(crate) x5t_s256: Option<()>,
+    pub x5t_s256: Option<()>,
+    /// Context
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) ctx: Option<String>,
+    pub ctx: Option<String>,
+    /// OAuth2 Extension - the client_id that issued this JWE
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
 }
 
 /// A Compact JWE that is able to be deciphered or stringified for transmission
@@ -459,6 +500,12 @@ impl JweCompact {
     /// Return the CEK Algorithm and the inner encryption type.
     pub fn get_alg_enc(&self) -> (JweAlg, JweEnc) {
         (self.header.alg, self.header.enc)
+    }
+
+    /// View the content of the JWE header. At this point the content is UNVERIFIED
+    /// and may NOT BE TRUSTED.
+    pub fn header(&self) -> &JweProtectedHeader {
+        &self.header
     }
 }
 
