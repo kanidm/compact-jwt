@@ -5,6 +5,7 @@ use crate::traits::JwsVerifiable;
 use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize};
 use serde_with::{
+    IfIsHumanReadable,
     base64::{Base64, UrlSafe},
     formats::Unpadded,
     serde_as,
@@ -42,10 +43,10 @@ pub enum Jwk {
         /// The Eliptic Curve in use
         crv: EcCurve,
         /// The public X component
-        #[serde_as(as = "Base64<UrlSafe, Unpadded>")]
+        #[serde_as(as = "IfIsHumanReadable<Base64<UrlSafe, Unpadded>>")]
         x: Vec<u8>,
         /// The public Y component
-        #[serde_as(as = "Base64<UrlSafe, Unpadded>")]
+        #[serde_as(as = "IfIsHumanReadable<Base64<UrlSafe, Unpadded>>")]
         y: Vec<u8>,
         // We don't decode d (private key) because that way we error defending from
         // the fact that ... well you leaked your private key.
@@ -63,10 +64,10 @@ pub enum Jwk {
     /// Legacy RSA public key
     RSA {
         /// Public n value
-        #[serde_as(as = "Base64<UrlSafe, Unpadded>")]
+        #[serde_as(as = "IfIsHumanReadable<Base64<UrlSafe, Unpadded>>")]
         n: Vec<u8>,
         /// Public exponent
-        #[serde_as(as = "Base64<UrlSafe, Unpadded>")]
+        #[serde_as(as = "IfIsHumanReadable<Base64<UrlSafe, Unpadded>>")]
         e: Vec<u8>,
         /// The algorithm in use for this key
         #[serde(skip_serializing_if = "Option::is_none")]
