@@ -1,13 +1,13 @@
 use super::a256gcm::JweA256GCMEncipher;
 use super::hs256::JwsHs256Signer;
+use crate::JwtError;
 use crate::compact::{JweAlg, JweCompact, JweEnc, JweProtectedHeader, ProtectedHeader};
 use crate::jwe::Jwe;
 use crate::traits::*;
-use crate::JwtError;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use crypto_glue::{
     aes256::{self, Aes256Key},
-    aes256cbc::{block_padding, Aes256CbcDec, Aes256CbcIv, BlockDecryptMut, KeyIvInit},
+    aes256cbc::{Aes256CbcDec, Aes256CbcIv, BlockDecryptMut, KeyIvInit, block_padding},
     rand::{self, Rng},
     traits::Zeroizing,
 };
@@ -391,34 +391,34 @@ pub(crate) fn nist_sp800_108_kdf_hmac_sha256(
 #[cfg(test)]
 mod tests {
     use super::MsOapxbcSessionKey;
-    use super::{nist_sp800_108_kdf_hmac_sha256, AAD_KDF_LABEL};
+    use super::{AAD_KDF_LABEL, nist_sp800_108_kdf_hmac_sha256};
+    use crate::JwtError;
     use crate::compact::JweAlg;
     use crate::compact::JweCompact;
     use crate::compact::JweEnc;
+    use crate::crypto::JweRSAOAEPEncipher;
     use crate::crypto::hs256::JwsHs256Signer;
     use crate::crypto::ms_oapxbc::JweA256GCMEncipher;
-    use crate::crypto::JweRSAOAEPEncipher;
     use crate::jwe::Jwe;
     use crate::jwe::JweBuilder;
     use crate::jws::JwsBuilder;
     use crate::traits::JweEncipherInnerA256;
     use crate::traits::JwsVerifiable;
     use crate::traits::JwsVerifier;
-    use crate::JwtError;
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     use crypto_glue::{
         aes256::Aes256Key,
         rsa::{RS256PrivateKey, RS256PublicKey},
         traits::Pkcs1DecodeRsaPrivateKey,
     };
     use kanidm_hsm_crypto::{
+        AuthValue,
         provider::{
             // TpmMsExtensions,
             SoftTpm,
             Tpm,
             TpmRS256,
         },
-        AuthValue,
     };
     use std::str::FromStr;
 

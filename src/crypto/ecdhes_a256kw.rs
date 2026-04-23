@@ -1,8 +1,8 @@
 use super::a256kw::JweA256KWEncipher;
+use crate::JwtError;
 use crate::compact::{EcCurve, JweAlg, JweCompact, JweProtectedHeader, Jwk};
 use crate::jwe::Jwe;
 use crate::traits::*;
-use crate::JwtError;
 use crypto_glue::{
     aes256::Aes256Key,
     ecdh_p256::{
@@ -38,8 +38,8 @@ impl JweEncipherOuterA256 for JweEcdhEsA256KWEncipher {
 
         hdr.epk = Some(Jwk::EC {
             crv: EcCurve::P256,
-            x: public_key_x.into(),
-            y: public_key_y.into(),
+            x: public_key_x,
+            y: public_key_y,
             alg: None,
             use_: None,
             kid: None,

@@ -12,11 +12,11 @@ use crypto_glue::{
     },
 };
 
+use crate::KID_LEN;
 use crate::compact::{EcCurve, JwaAlg, Jwk, JwkUse, JwsCompact, ProtectedHeader};
 use crate::error::JwtError;
 use crate::traits::*;
-use crate::KID_LEN;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
@@ -180,8 +180,8 @@ impl JwsEs256Signer {
 
         Ok(Jwk::EC {
             crv: EcCurve::P256,
-            x: public_key_x.into(),
-            y: public_key_y.into(),
+            x: public_key_x,
+            y: public_key_y,
             alg: Some(JwaAlg::ES256),
             use_: Some(JwkUse::Sig),
             kid: Some(kid),
@@ -389,8 +389,8 @@ impl JwsEs256Verifier {
 
         Ok(Jwk::EC {
             crv: EcCurve::P256,
-            x: public_key_x.into(),
-            y: public_key_y.into(),
+            x: public_key_x,
+            y: public_key_y,
             alg: Some(JwaAlg::ES256),
             use_: Some(JwkUse::Sig),
             kid: Some(self.kid.clone()),

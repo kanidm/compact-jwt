@@ -1,10 +1,10 @@
 //! JWS Signing and Verification Structures
 
+use crate::KID_LEN;
 use crate::compact::{JwaAlg, Jwk, JwkUse, JwsCompact, ProtectedHeader};
 use crate::error::JwtError;
 use crate::traits::*;
-use crate::KID_LEN;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use crypto_glue::{
     rsa::{
         self, BigUint, RS256Digest, RS256PrivateKey, RS256PublicKey, RS256Signature,
@@ -120,8 +120,8 @@ impl JwsRs256Signer {
         let public_key_e = self.skey.e().to_bytes_be();
 
         Ok(Jwk::RSA {
-            n: public_key_n.into(),
-            e: public_key_e.into(),
+            n: public_key_n,
+            e: public_key_e,
             alg: Some(JwaAlg::RS256),
             use_: Some(JwkUse::Sig),
             kid: Some(self.kid.clone()),
@@ -255,8 +255,8 @@ impl JwsRs256Verifier {
         let public_key_e = self.pkey.e().to_bytes_be();
 
         Ok(Jwk::RSA {
-            n: public_key_n.into(),
-            e: public_key_e.into(),
+            n: public_key_n,
+            e: public_key_e,
             alg: Some(JwaAlg::RS256),
             use_: Some(JwkUse::Sig),
             kid: Some(self.kid.clone()),

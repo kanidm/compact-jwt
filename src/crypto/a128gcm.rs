@@ -1,8 +1,8 @@
+use crate::JwtError;
 use crate::compact::{JweCompact, JweEnc};
 use crate::jwe::Jwe;
 use crate::traits::*;
-use crate::JwtError;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use crypto_glue::{
     aes128::{self, Aes128Key},
     aes128gcm::{self, Aes128Gcm, Aes128GcmNonce, Aes128GcmTag},

@@ -1,7 +1,7 @@
 use crate::compact::{JwaAlg, JwsCompact, ProtectedHeader};
 use crate::error::JwtError;
 use crate::traits::*;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use kanidm_hsm_crypto::{
     provider::{Tpm, TpmES256},
     structures::ES256Key,
@@ -101,10 +101,10 @@ mod tests {
     use crate::jws::JwsBuilder;
     use crate::traits::*;
     use kanidm_hsm_crypto::{
+        AuthValue,
         provider::BoxedDynTpm,
         provider::SoftTpm,
         provider::{Tpm, TpmES256},
-        AuthValue,
     };
 
     #[test]

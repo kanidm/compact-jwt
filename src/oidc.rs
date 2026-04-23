@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 use time::OffsetDateTime;
-use time::{macros::format_description, Date};
+use time::{Date, macros::format_description};
 use url::Url;
 use uuid::Uuid;
 
@@ -346,10 +346,10 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::OidcClaims;
     use crate::crypto::JwsEs256Signer;
     use crate::oidc::OidcAddress;
     use crate::traits::{JwsSigner, JwsSignerToVerifier, JwsVerifier};
-    use crate::OidcClaims;
     use time::OffsetDateTime;
     use url::Url;
 

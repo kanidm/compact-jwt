@@ -3,7 +3,7 @@
 use crate::compact::{JwsCompact, ProtectedHeader};
 use crate::error::JwtError;
 use crate::traits::JwsSignable;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
