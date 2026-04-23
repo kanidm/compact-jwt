@@ -12,11 +12,11 @@ use crypto_glue::{
     },
 };
 
+use crate::KID_LEN;
 use crate::compact::{EcCurve, JwaAlg, Jwk, JwkUse, JwsCompact, ProtectedHeader};
 use crate::error::JwtError;
 use crate::traits::*;
-use crate::KID_LEN;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 

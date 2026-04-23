@@ -2,7 +2,7 @@
 use crate::error::JwtError;
 use crate::jws::Jws;
 use crate::traits::JwsVerifiable;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize};
 use serde_with::{
     base64::{Base64, UrlSafe},
@@ -226,11 +226,11 @@ impl FromStr for JwsCompact {
 
         // Assert that from the critical field of the header, we have decoded all the needed types.
         // Remember, anything in rfc7515 can NOT be in the crit field.
-        if let Some(crit) = &header.crit {
-            if !crit.is_empty() {
-                error!("critical extension - unable to process critical extensions");
-                return Err(JwtError::CriticalExtension);
-            }
+        if let Some(crit) = &header.crit
+            && !crit.is_empty()
+        {
+            error!("critical extension - unable to process critical extensions");
+            return Err(JwtError::CriticalExtension);
         }
 
         // Now we have a header, lets get the rest.
@@ -546,11 +546,11 @@ impl FromStr for JweCompact {
 
         // Assert that from the critical field of the header, we have decoded all the needed types.
         // Remember, anything in rfc7515 can NOT be in the crit field.
-        if let Some(crit) = &header.crit {
-            if !crit.is_empty() {
-                error!("critical extension - unable to process critical extensions");
-                return Err(JwtError::CriticalExtension);
-            }
+        if let Some(crit) = &header.crit
+            && !crit.is_empty()
+        {
+            error!("critical extension - unable to process critical extensions");
+            return Err(JwtError::CriticalExtension);
         }
 
         // Now we have a header, lets get the rest.

@@ -1,8 +1,8 @@
 use super::a256kw::JweA256KWEncipher;
+use crate::JwtError;
 use crate::compact::{EcCurve, JweAlg, JweCompact, JweProtectedHeader, Jwk};
 use crate::jwe::Jwe;
 use crate::traits::*;
-use crate::JwtError;
 use crypto_glue::{
     aes256::Aes256Key,
     ecdh_p256::{
