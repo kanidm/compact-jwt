@@ -38,8 +38,8 @@ impl JweEncipherOuterA256 for JweEcdhEsA256KWEncipher {
 
         hdr.epk = Some(Jwk::EC {
             crv: EcCurve::P256,
-            x: public_key_x.into(),
-            y: public_key_y.into(),
+            x: public_key_x,
+            y: public_key_y,
             alg: None,
             use_: None,
             kid: None,

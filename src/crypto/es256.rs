@@ -180,8 +180,8 @@ impl JwsEs256Signer {
 
         Ok(Jwk::EC {
             crv: EcCurve::P256,
-            x: public_key_x.into(),
-            y: public_key_y.into(),
+            x: public_key_x,
+            y: public_key_y,
             alg: Some(JwaAlg::ES256),
             use_: Some(JwkUse::Sig),
             kid: Some(kid),
@@ -389,8 +389,8 @@ impl JwsEs256Verifier {
 
         Ok(Jwk::EC {
             crv: EcCurve::P256,
-            x: public_key_x.into(),
-            y: public_key_y.into(),
+            x: public_key_x,
+            y: public_key_y,
             alg: Some(JwaAlg::ES256),
             use_: Some(JwkUse::Sig),
             kid: Some(self.kid.clone()),

@@ -120,8 +120,8 @@ impl JwsRs256Signer {
         let public_key_e = self.skey.e().to_bytes_be();
 
         Ok(Jwk::RSA {
-            n: public_key_n.into(),
-            e: public_key_e.into(),
+            n: public_key_n,
+            e: public_key_e,
             alg: Some(JwaAlg::RS256),
             use_: Some(JwkUse::Sig),
             kid: Some(self.kid.clone()),
@@ -255,8 +255,8 @@ impl JwsRs256Verifier {
         let public_key_e = self.pkey.e().to_bytes_be();
 
         Ok(Jwk::RSA {
-            n: public_key_n.into(),
-            e: public_key_e.into(),
+            n: public_key_n,
+            e: public_key_e,
             alg: Some(JwaAlg::RS256),
             use_: Some(JwkUse::Sig),
             kid: Some(self.kid.clone()),
