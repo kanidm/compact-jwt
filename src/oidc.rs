@@ -311,10 +311,12 @@ impl OidcExpUnverified {
     ///
     /// A curtime of `0` means that the exp will not be checked. This is not recommended.
     pub fn verify_exp(self, curtime: i64) -> Result<OidcToken, JwtError> {
-        if self.oidc.exp != 0 && self.oidc.exp < curtime {
-            Err(JwtError::OidcTokenExpired)
-        } else {
+        if self.oidc.exp == 0
+            || (self.oidc.nbf.map(|nbf| nbf < curtime).unwrap_or(true) && curtime <= self.oidc.exp)
+        {
             Ok(self.oidc)
+        } else {
+            Err(JwtError::OidcTokenExpired)
         }
     }
 }
@@ -361,7 +363,7 @@ mod tests {
             sub: OidcSubject::S("a unique id".to_string()),
             aud: "test".to_string(),
             exp: 0,
-            nbf: Some(0),
+            nbf: None,
             iat: 0,
             auth_time: None,
             nonce: None,
@@ -394,6 +396,130 @@ mod tests {
             .verify(&jwtu)
             .expect("Unable to validate jwt")
             .verify_exp(0)
+            .expect("Unable to validate oidc exp");
+
+        assert!(released == jwt);
+    }
+
+    #[test]
+    fn test_without_nbf_and_exp() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let jwt = OidcToken {
+            iss: Url::parse("https://oidc.example.com").expect("Failed to parse URL"),
+            sub: OidcSubject::S("a unique id".to_string()),
+            aud: "test".to_string(),
+            exp: 120,
+            nbf: None,
+            iat: 0,
+            auth_time: None,
+            nonce: None,
+            at_hash: None,
+            acr: None,
+            amr: None,
+            azp: None,
+            jti: None,
+            s_claims: Default::default(),
+            claims: Default::default(),
+        };
+
+        debug!(?jwt);
+
+        let jws_es256_signer =
+            JwsEs256Signer::generate_es256().expect("failed to construct signer.");
+        let jwk_es256_verifier = jws_es256_signer
+            .get_verifier()
+            .expect("failed to get verifier from signer");
+
+        let jwts = jws_es256_signer.sign(&jwt).expect("failed to sign jwt");
+
+        debug!(%jwts);
+
+        let jwtu = jwts.invalidate();
+
+        debug!(%jwtu);
+
+        let exp_unverified = jwk_es256_verifier
+            .verify(&jwtu)
+            .expect("Unable to validate jwt");
+
+        // Not before is None, so this is okay.
+        assert!(exp_unverified.verify_exp(1).is_ok());
+
+        let exp_unverified = jwk_es256_verifier
+            .verify(&jwtu)
+            .expect("Unable to validate jwt");
+
+        // Expiry
+        assert!(exp_unverified.verify_exp(121).is_err());
+
+        let exp_unverified = jwk_es256_verifier
+            .verify(&jwtu)
+            .expect("Unable to validate jwt");
+
+        let released = exp_unverified
+            .verify_exp(90)
+            .expect("Unable to validate oidc exp");
+
+        assert!(released == jwt);
+    }
+
+    #[test]
+    fn test_nbf_and_exp() {
+        let _ = tracing_subscriber::fmt::try_init();
+        let jwt = OidcToken {
+            iss: Url::parse("https://oidc.example.com").expect("Failed to parse URL"),
+            sub: OidcSubject::S("a unique id".to_string()),
+            aud: "test".to_string(),
+            exp: 120,
+            nbf: Some(60),
+            iat: 0,
+            auth_time: None,
+            nonce: None,
+            at_hash: None,
+            acr: None,
+            amr: None,
+            azp: None,
+            jti: None,
+            s_claims: Default::default(),
+            claims: Default::default(),
+        };
+
+        debug!(?jwt);
+
+        let jws_es256_signer =
+            JwsEs256Signer::generate_es256().expect("failed to construct signer.");
+        let jwk_es256_verifier = jws_es256_signer
+            .get_verifier()
+            .expect("failed to get verifier from signer");
+
+        let jwts = jws_es256_signer.sign(&jwt).expect("failed to sign jwt");
+
+        debug!(%jwts);
+
+        let jwtu = jwts.invalidate();
+
+        debug!(%jwtu);
+
+        let exp_unverified = jwk_es256_verifier
+            .verify(&jwtu)
+            .expect("Unable to validate jwt");
+
+        // Not before.
+        assert!(exp_unverified.verify_exp(60).is_err());
+
+        let exp_unverified = jwk_es256_verifier
+            .verify(&jwtu)
+            .expect("Unable to validate jwt");
+
+        // Expiry
+        assert!(exp_unverified.verify_exp(121).is_err());
+
+        let exp_unverified = jwk_es256_verifier
+            .verify(&jwtu)
+            .expect("Unable to validate jwt");
+
+        let released = exp_unverified
+            .verify_exp(90)
             .expect("Unable to validate oidc exp");
 
         assert!(released == jwt);
