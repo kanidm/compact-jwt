@@ -84,12 +84,6 @@ impl JwsBuilder {
         self
     }
 
-    /// Set the OAuth2 Client ID
-    pub fn set_client_id(mut self, client_id: Option<&str>) -> Self {
-        self.header.client_id = client_id.map(|s| s.to_string());
-        self
-    }
-
     /// Finalise this builder
     pub fn build(self) -> Jws {
         let JwsBuilder { header, payload } = self;
@@ -108,11 +102,6 @@ impl Jws {
     /// Get the bytes of the payload of this JWS
     pub fn payload(&self) -> &[u8] {
         &self.payload
-    }
-
-    /// View the authenticated header content
-    pub fn header(&self) -> &ProtectedHeader {
-        &self.header
     }
 
     /// Create a JWS from a serialisable type. This assumes you want to encode
