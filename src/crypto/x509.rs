@@ -6,13 +6,13 @@ use crate::compact::ProtectedHeader;
 use crate::error::JwtError;
 use crate::traits::*;
 use crate::{JwsCompact, KID_LEN};
-use base64::engine::general_purpose;
 use base64::Engine;
+use base64::engine::general_purpose;
 use crypto_glue::{
     ecdsa_p384::{EcdsaP384Digest, EcdsaP384PrivateKey, EcdsaP384Signature, EcdsaP384SigningKey},
     s256,
     traits::{Digest, DigestSigner, EncodeDer, SignatureEncoding},
-    x509::{x509_verify_signature, Certificate, SubjectKeyIdentifier, X509Store},
+    x509::{Certificate, SubjectKeyIdentifier, X509Store, x509_verify_signature},
 };
 use std::time::SystemTime;
 

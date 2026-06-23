@@ -1,7 +1,7 @@
+use crate::JwtError;
 use crate::compact::{JweAlg, JweCompact, JweProtectedHeader};
 use crate::jwe::Jwe;
 use crate::traits::*;
-use crate::JwtError;
 use crypto_glue::{
     aes256::{self, Aes256Key},
     aes256kw::{Aes256Kw, Aes256KwWrapped},

@@ -1,10 +1,10 @@
 //! JWS Signing and Verification Structures
+use crate::KID_LEN;
 use crate::compact::{JwaAlg, JwsCompact, ProtectedHeader};
 use crate::error::JwtError;
 use crate::jws::JwsCompactSign2Data;
 use crate::traits::*;
-use crate::KID_LEN;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use crypto_glue::{
     hmac_s256::{self, HmacSha256, HmacSha256Bytes, HmacSha256Key, HmacSha256Output},
     traits::Mac,
@@ -213,11 +213,11 @@ fn kid(skey: &HmacSha256Key) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{hmac_s256, JwsHs256Signer};
+    use super::{JwsHs256Signer, hmac_s256};
     use crate::compact::JwsCompact;
     use crate::jws::JwsBuilder;
     use crate::traits::*;
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     use std::convert::TryFrom;
     use std::str::FromStr;
 

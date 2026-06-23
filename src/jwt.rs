@@ -5,7 +5,7 @@ use crate::compact::{JwaAlg, Jwk, JwsCompact, JwsCompactVerifyData};
 use crate::error::JwtError;
 use crate::jws::{Jws, JwsCompactSign2Data, JwsSigned};
 use crate::traits::{JwsSignable, JwsVerifiable};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::marker::PhantomData;

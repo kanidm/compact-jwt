@@ -2,7 +2,7 @@
 
 use crate::compact::{JweCompact, JweEnc, JwsCompact};
 use crate::error::JwtError;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use crypto_glue::aes128::Aes128Key;
 use crypto_glue::aes256::Aes256Key;
 

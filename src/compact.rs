@@ -1,15 +1,18 @@
 //! Compact serialisation formats
-use base64::{engine::general_purpose, Engine as _};
-
-use serde::{Deserialize, Serialize};
-use std::fmt;
-use std::str::FromStr;
-use url::Url;
-
 use crate::error::JwtError;
 use crate::jws::Jws;
 use crate::traits::JwsVerifiable;
-use base64urlsafedata::Base64UrlSafeData;
+use base64::{Engine as _, engine::general_purpose};
+use serde::{Deserialize, Serialize};
+use serde_with::{
+    IfIsHumanReadable,
+    base64::{Base64, UrlSafe},
+    formats::Unpadded,
+    serde_as,
+};
+use std::fmt;
+use std::str::FromStr;
+use url::Url;
 
 // https://datatracker.ietf.org/doc/html/rfc7515
 
@@ -29,6 +32,7 @@ pub enum EcCurve {
     P256,
 }
 
+#[serde_as]
 #[derive(Debug, Serialize, Clone, Deserialize, PartialEq)]
 #[allow(non_camel_case_types)]
 #[serde(tag = "kty")]
@@ -39,9 +43,11 @@ pub enum Jwk {
         /// The Eliptic Curve in use
         crv: EcCurve,
         /// The public X component
-        x: Base64UrlSafeData,
+        #[serde_as(as = "IfIsHumanReadable<Base64<UrlSafe, Unpadded>>")]
+        x: Vec<u8>,
         /// The public Y component
-        y: Base64UrlSafeData,
+        #[serde_as(as = "IfIsHumanReadable<Base64<UrlSafe, Unpadded>>")]
+        y: Vec<u8>,
         // We don't decode d (private key) because that way we error defending from
         // the fact that ... well you leaked your private key.
         // d: Base64UrlSafeData
@@ -58,9 +64,11 @@ pub enum Jwk {
     /// Legacy RSA public key
     RSA {
         /// Public n value
-        n: Base64UrlSafeData,
+        #[serde_as(as = "IfIsHumanReadable<Base64<UrlSafe, Unpadded>>")]
+        n: Vec<u8>,
         /// Public exponent
-        e: Base64UrlSafeData,
+        #[serde_as(as = "IfIsHumanReadable<Base64<UrlSafe, Unpadded>>")]
+        e: Vec<u8>,
         /// The algorithm in use for this key
         #[serde(skip_serializing_if = "Option::is_none")]
         alg: Option<JwaAlg>,
@@ -219,11 +227,11 @@ impl FromStr for JwsCompact {
 
         // Assert that from the critical field of the header, we have decoded all the needed types.
         // Remember, anything in rfc7515 can NOT be in the crit field.
-        if let Some(crit) = &header.crit {
-            if !crit.is_empty() {
-                error!("critical extension - unable to process critical extensions");
-                return Err(JwtError::CriticalExtension);
-            }
+        if let Some(crit) = &header.crit
+            && !crit.is_empty()
+        {
+            error!("critical extension - unable to process critical extensions");
+            return Err(JwtError::CriticalExtension);
         }
 
         // Now we have a header, lets get the rest.
@@ -539,11 +547,11 @@ impl FromStr for JweCompact {
 
         // Assert that from the critical field of the header, we have decoded all the needed types.
         // Remember, anything in rfc7515 can NOT be in the crit field.
-        if let Some(crit) = &header.crit {
-            if !crit.is_empty() {
-                error!("critical extension - unable to process critical extensions");
-                return Err(JwtError::CriticalExtension);
-            }
+        if let Some(crit) = &header.crit
+            && !crit.is_empty()
+        {
+            error!("critical extension - unable to process critical extensions");
+            return Err(JwtError::CriticalExtension);
         }
 
         // Now we have a header, lets get the rest.
