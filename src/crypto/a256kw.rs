@@ -69,6 +69,17 @@ impl JweA256KWEncipher {
         self.kid = kid;
     }
 
+    /// Enable or disable the embeddidng of a key id during encryption
+    pub fn set_sign_option_embed_kid(&mut self, value: bool) {
+        if value {
+            if self.kid.is_none() {
+                self.kid = Some(kid(&self.wrap_key));
+            }
+        } else {
+            self.kid = None
+        }
+    }
+
     /// Generate and return a key identifier for this wrapping key
     pub fn get_kid(&self) -> String {
         self.kid.clone().unwrap_or_else(|| kid(&self.wrap_key))
