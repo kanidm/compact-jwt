@@ -166,7 +166,7 @@ impl Serialize for OidcDate {
         S: serde::Serializer,
     {
         match self {
-            OidcDate::Date(d) => serializer.serialize_str(format!("{}", &d).as_str()),
+            OidcDate::Date(d) => serializer.serialize_str(format!("{}", d).as_str()),
             OidcDate::Year(y) => serializer.serialize_str(&format!("{:04}", y)),
         }
     }
@@ -312,7 +312,8 @@ impl OidcExpUnverified {
     /// A curtime of `0` means that the exp will not be checked. This is not recommended.
     pub fn verify_exp(self, curtime: i64) -> Result<OidcToken, JwtError> {
         if self.oidc.exp == 0
-            || (self.oidc.nbf.map(|nbf| nbf < curtime).unwrap_or(true) && curtime <= self.oidc.exp)
+            || curtime == 0
+            || (self.oidc.nbf.map(|nbf| nbf <= curtime).unwrap_or(true) && curtime <= self.oidc.exp)
         {
             Ok(self.oidc)
         } else {
@@ -505,7 +506,7 @@ mod tests {
             .expect("Unable to validate jwt");
 
         // Not before.
-        assert!(exp_unverified.verify_exp(60).is_err());
+        assert!(exp_unverified.verify_exp(59).is_err());
 
         let exp_unverified = jwk_es256_verifier
             .verify(&jwtu)
@@ -519,7 +520,7 @@ mod tests {
             .expect("Unable to validate jwt");
 
         let released = exp_unverified
-            .verify_exp(90)
+            .verify_exp(60)
             .expect("Unable to validate oidc exp");
 
         assert!(released == jwt);
