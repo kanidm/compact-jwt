@@ -35,7 +35,7 @@ impl JweRSAOAEPDecipher {
             return Err(JwtError::CryptoError);
         }
 
-        let padding = Oaep::new::<sha1::Sha1>();
+        let padding = Oaep::<sha1::Sha1>::new();
         let decrypted_data = self
             .rsa_priv_key
             .decrypt(padding, jwec.content_enc_key.as_slice())
@@ -44,7 +44,7 @@ impl JweRSAOAEPDecipher {
                 JwtError::CryptoError
             })?;
 
-        aes256::key_from_vec(decrypted_data).ok_or_else(|| {
+        aes256::key_from_slice(&decrypted_data).ok_or_else(|| {
             debug!("invalid content key length");
             JwtError::CryptoError
         })
@@ -90,8 +90,8 @@ impl JweEncipherOuterA256 for JweRSAOAEPEncipher {
     }
 
     fn wrap_key(&self, key_to_wrap: Aes256Key) -> Result<Vec<u8>, JwtError> {
-        let mut rng = rand::thread_rng();
-        let padding = Oaep::new::<sha1::Sha1>();
+        let mut rng = rand::rng();
+        let padding = Oaep::<sha1::Sha1>::new();
         self.rsa_pub_key
             .encrypt(&mut rng, padding, key_to_wrap.as_slice())
             .map_err(|err| {
@@ -124,9 +124,10 @@ mod tests {
             .decode(d)
             .expect("Invalid Key");
 
-        let nbn = BigUint::from_bytes_be(&n);
-        let ebn = BigUint::from_bytes_be(&e);
-        let dbn = BigUint::from_bytes_be(&d);
+        // Safe in a test case to use the vartime version.
+        let nbn = BigUint::from_be_slice_vartime(&n);
+        let ebn = BigUint::from_be_slice_vartime(&e);
+        let dbn = BigUint::from_be_slice_vartime(&d);
 
         RS256PrivateKey::from_components(nbn, ebn, dbn, vec![]).expect("Invalid parameters")
     }

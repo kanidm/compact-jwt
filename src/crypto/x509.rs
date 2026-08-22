@@ -183,18 +183,19 @@ impl JwsSigner for JwsX509Signer<EcdsaP384PrivateKey> {
             })
             .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(bytes))?;
 
-        let mut hasher = EcdsaP384Digest::new();
-
-        hasher.update(hdr_b64.as_bytes());
-        hasher.update(".".as_bytes());
-        hasher.update(sign_data.payload_b64.as_bytes());
-
         let signer = EcdsaP384SigningKey::from(&self.signer);
 
-        let signature: EcdsaP384Signature = signer.try_sign_digest(hasher).map_err(|err| {
-            debug!(?err);
-            JwtError::CryptoError
-        })?;
+        let signature: EcdsaP384Signature = signer
+            .try_sign_digest(|hasher: &mut EcdsaP384Digest| {
+                hasher.update(hdr_b64.as_bytes());
+                hasher.update(".".as_bytes());
+                hasher.update(sign_data.payload_b64.as_bytes());
+                Ok(())
+            })
+            .map_err(|err| {
+                debug!(?err);
+                JwtError::CryptoError
+            })?;
 
         let jwsc = JwsCompact {
             header: sign_data.header,
@@ -213,8 +214,8 @@ impl JwsSigner for JwsX509Signer<EcdsaP384PrivateKey> {
 
 fn certificate_to_kid(cert: &Certificate) -> String {
     let maybe_subject_key_id = cert
-        .tbs_certificate
-        .get::<SubjectKeyIdentifier>()
+        .tbs_certificate()
+        .get_extension::<SubjectKeyIdentifier>()
         .ok()
         .flatten();
 
@@ -223,8 +224,8 @@ fn certificate_to_kid(cert: &Certificate) -> String {
         hex::encode(subject_key_id.as_ref().as_bytes())
     } else {
         let pub_key = &cert
-            .tbs_certificate
-            .subject_public_key_info
+            .tbs_certificate()
+            .subject_public_key_info()
             .subject_public_key;
 
         // If not, hash the publickey

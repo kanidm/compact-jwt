@@ -116,8 +116,8 @@ impl JwsRs256Signer {
 
     /// Get the public Jwk from this signer
     pub fn public_key_as_jwk(&self) -> Result<Jwk, JwtError> {
-        let public_key_n = self.skey.n().to_bytes_be();
-        let public_key_e = self.skey.e().to_bytes_be();
+        let public_key_n = self.skey.n().to_be_bytes();
+        let public_key_e = self.skey.e().to_be_bytes();
 
         Ok(Jwk::RSA {
             n: public_key_n.into(),
@@ -187,18 +187,19 @@ impl JwsSigner for JwsRs256Signer {
             })
             .map(|bytes| general_purpose::URL_SAFE_NO_PAD.encode(bytes))?;
 
-        let mut hasher = RS256Digest::new();
-
-        hasher.update(hdr_b64.as_bytes());
-        hasher.update(".".as_bytes());
-        hasher.update(sign_data.payload_b64.as_bytes());
-
         let signer = RS256SigningKey::new(self.skey.clone());
 
-        let signature: RS256Signature = signer.try_sign_digest(hasher).map_err(|err| {
-            debug!(?err);
-            JwtError::CryptoError
-        })?;
+        let signature: RS256Signature = signer
+            .try_sign_digest(|hasher: &mut RS256Digest| {
+                hasher.update(hdr_b64.as_bytes());
+                hasher.update(".".as_bytes());
+                hasher.update(sign_data.payload_b64.as_bytes());
+                Ok(())
+            })
+            .map_err(|err| {
+                debug!(?err);
+                JwtError::CryptoError
+            })?;
 
         let jwsc = JwsCompact {
             header: sign_data.header,
@@ -251,8 +252,8 @@ impl JwsRs256Verifier {
 
     /// Export the content of this verifier as a public JWK
     pub fn public_key_as_jwk(&self) -> Result<Jwk, JwtError> {
-        let public_key_n = self.pkey.n().to_bytes_be();
-        let public_key_e = self.pkey.e().to_bytes_be();
+        let public_key_n = self.pkey.n().to_be_bytes();
+        let public_key_e = self.pkey.e().to_be_bytes();
 
         Ok(Jwk::RSA {
             n: public_key_n.into(),
@@ -287,8 +288,8 @@ impl TryFrom<&Jwk> for JwsRs256Verifier {
                 use_: _,
                 kid,
             } => {
-                let n = BigUint::from_bytes_be(n);
-                let e = BigUint::from_bytes_be(e);
+                let n = BigUint::from_be_slice_vartime(n);
+                let e = BigUint::from_be_slice_vartime(e);
 
                 let pkey = RS256PublicKey::new(n, e).map_err(|err| {
                     debug!(?err);
@@ -329,18 +330,22 @@ impl JwsVerifier for JwsRs256Verifier {
             JwtError::InvalidSignature
         })?;
 
-        let mut hasher = RS256Digest::new();
-
-        hasher.update(signed_data.hdr_bytes);
-        hasher.update(".".as_bytes());
-        hasher.update(signed_data.payload_bytes);
-
         let verifier = RS256VerifyingKey::new(self.pkey.clone());
 
-        verifier.verify_digest(hasher, &signature).map_err(|err| {
-            debug!(?err, "invalid signature");
-            JwtError::InvalidSignature
-        })?;
+        verifier
+            .verify_digest(
+                |hasher: &mut RS256Digest| {
+                    hasher.update(signed_data.hdr_bytes);
+                    hasher.update(".".as_bytes());
+                    hasher.update(signed_data.payload_bytes);
+                    Ok(())
+                },
+                &signature,
+            )
+            .map_err(|err| {
+                debug!(?err, "invalid signature");
+                JwtError::InvalidSignature
+            })?;
 
         signed_data.release().and_then(|d| jwsc.post_process(d))
     }

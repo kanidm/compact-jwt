@@ -6,7 +6,7 @@ use crypto_glue::{
     aes256::{self, Aes256Key},
     aes256kw::{Aes256Kw, Aes256KwWrapped},
     hmac_s256::{HmacSha256, HmacSha256Key},
-    traits::Mac,
+    traits::{KeyInit, Mac},
 };
 
 /// A JWE outer encipher and decipher for RFC3394 AES 256 Key Wrapping.
@@ -44,7 +44,7 @@ impl JweEncipherOuterA256 for JweA256KWEncipher {
         let mut wrapped_key = Aes256KwWrapped::default();
 
         key_wrap
-            .wrap(&key_to_wrap, &mut wrapped_key)
+            .wrap_key(&key_to_wrap, &mut wrapped_key)
             .map_err(|err| {
                 error!(?err);
                 JwtError::CryptoError
@@ -93,8 +93,8 @@ impl JweA256KWEncipher {
 
     /// Given a JWE in compact form, decipher and authenticate its content.
     pub fn decipher(&self, jwec: &JweCompact) -> Result<Jwe, JwtError> {
-        let wrapped_key = Aes256KwWrapped::from_exact_iter(jwec.content_enc_key.iter().copied())
-            .ok_or_else(|| {
+        let wrapped_key = Aes256KwWrapped::try_from_iter(jwec.content_enc_key.iter().copied())
+            .map_err(|_err| {
                 debug!("Invalid content encryption key length");
                 JwtError::CryptoError
             })?;
@@ -103,7 +103,7 @@ impl JweA256KWEncipher {
         let mut key_unwrapped = aes256::Aes256Key::default();
 
         key_wrap
-            .unwrap(&wrapped_key, &mut key_unwrapped)
+            .unwrap_key(&wrapped_key, &mut key_unwrapped)
             .map_err(|err| {
                 error!(?err);
                 JwtError::CryptoError

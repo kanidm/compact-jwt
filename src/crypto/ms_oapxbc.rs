@@ -7,8 +7,8 @@ use crate::JwtError;
 use base64::{engine::general_purpose, Engine as _};
 use crypto_glue::{
     aes256::{self, Aes256Key},
-    aes256cbc::{block_padding, Aes256CbcDec, Aes256CbcIv, BlockDecryptMut, KeyIvInit},
-    rand::{self, Rng},
+    aes256cbc::{block_padding, Aes256CbcDec, Aes256CbcIv, BlockModeDecrypt, KeyIvInit},
+    rand::{self, RngExt},
     traits::Zeroizing,
 };
 use kanidm_hsm_crypto::{
@@ -112,14 +112,14 @@ impl MsOapxbcSessionKey {
             JwtError::CryptoError
         })?;
 
-        let iv = Aes256CbcIv::from_exact_iter(jwec.iv.iter().copied()).ok_or_else(|| {
+        let iv = Aes256CbcIv::try_from_iter(jwec.iv.iter().copied()).map_err(|_| {
             debug!("invalid aes key length");
             JwtError::CryptoError
         })?;
 
         let dec = Aes256CbcDec::new(&derived_aes_key, &iv);
         let payload = dec
-            .decrypt_padded_vec_mut::<block_padding::Pkcs7>(&jwec.ciphertext)
+            .decrypt_padded_vec::<block_padding::Pkcs7>(&jwec.ciphertext)
             .map_err(|err| {
                 error!(?err);
                 JwtError::CryptoError
@@ -245,7 +245,7 @@ impl MsOapxbcSessionKey {
         T: TpmMsExtensions + ?Sized,
     {
         let mut nonce = [0; CTX_NONCE_LEN];
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         rng.fill(&mut nonce);
 
         let derived_key = match &self {

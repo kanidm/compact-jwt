@@ -1,6 +1,6 @@
 [package]
 name = "compact_jwt"
-version = "0.5.7"
+version = "0.6.0"
 edition = "2021"
 authors = ["William Brown <william@blackhats.net.au>"]
 description = "Minimal implementation of JWT for OIDC and other applications"
@@ -19,15 +19,15 @@ default = []
 all-features = true
 
 [patch.crates-io]
-# kanidm-hsm-crypto = { path = "../hsm-crypto" }
-# crypto-glue = { path = "../crypto-glue" }
+kanidm-hsm-crypto = { path = "../hsm-crypto" }
+crypto-glue = { path = "../crypto-glue" }
 
 [dependencies]
 base64 = "^0.22.1"
 base64urlsafedata = "^0.5.1"
-crypto-glue = "^0.1.12"
+crypto-glue = "^0.2.0"
 hex = "0.4"
-kanidm-hsm-crypto = "^0.3.2"
+kanidm-hsm-crypto = "^0.4.0"
 serde = { version = "^1.0.228", features = ["derive"] }
 serde_json = "^1.0.145"
 time = { version = "0.3.44", features = ["macros", "parsing", "serde"] }
@@ -38,5 +38,3 @@ uuid = { version = "^1.19.0", features = ["serde"] }
 [dev-dependencies]
 tracing-subscriber = "^0.3.22"
 
-[profile.dev.package.num-bigint-dig]
-opt-level = 3

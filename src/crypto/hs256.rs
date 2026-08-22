@@ -7,7 +7,7 @@ use crate::KID_LEN;
 use base64::{engine::general_purpose, Engine as _};
 use crypto_glue::{
     hmac_s256::{self, HmacSha256, HmacSha256Bytes, HmacSha256Key, HmacSha256Output},
-    traits::Mac,
+    traits::{KeyInit, Mac},
 };
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -177,13 +177,12 @@ impl JwsVerifier for JwsHs256Signer {
             return Err(JwtError::ValidatorAlgMismatch);
         }
 
-        let signature =
-            HmacSha256Bytes::from_exact_iter(signed_data.signature_bytes.iter().copied())
-                .map(HmacSha256Output::new)
-                .ok_or_else(|| {
-                    debug!("Invalid HMAC signature length");
-                    JwtError::CryptoError
-                })?;
+        let signature = HmacSha256Bytes::try_from_iter(signed_data.signature_bytes.iter().copied())
+            .map(HmacSha256Output::new)
+            .map_err(|_err| {
+                debug!("Invalid HMAC signature length");
+                JwtError::CryptoError
+            })?;
 
         let mut hmac = HmacSha256::new(&self.skey);
         hmac.update(signed_data.hdr_bytes);
