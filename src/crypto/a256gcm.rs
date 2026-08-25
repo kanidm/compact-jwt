@@ -6,7 +6,7 @@ use base64::{engine::general_purpose, Engine as _};
 use crypto_glue::{
     aes256::{self, Aes256Key},
     aes256gcm::{self, Aes256Gcm, Aes256GcmNonce, Aes256GcmTag},
-    traits::{AeadInPlace, KeyInit},
+    traits::{AeadInOut, KeyInit},
 };
 
 /// A JWE inner encipher and decipher for AES 256 GCM.
@@ -65,7 +65,11 @@ impl JweEncipherInnerA256 for JweA256GCMEncipher {
         let mut encryption_data = jwe.payload.clone();
 
         let authentication_tag = cipher
-            .encrypt_in_place_detached(&nonce, associated_data, encryption_data.as_mut_slice())
+            .encrypt_inout_detached(
+                &nonce,
+                associated_data,
+                encryption_data.as_mut_slice().into(),
+            )
             .map_err(|err| {
                 debug!(?err);
                 JwtError::CryptoError
@@ -86,26 +90,27 @@ impl JweA256GCMEncipher {
     pub(crate) fn decipher_inner(&self, jwec: &JweCompact) -> Result<Vec<u8>, JwtError> {
         let cipher = Aes256Gcm::new(&self.aes_key);
 
-        let nonce = Aes256GcmNonce::from_exact_iter(jwec.iv.iter().copied()).ok_or_else(|| {
+        let nonce = Aes256GcmNonce::try_from_iter(jwec.iv.iter().copied()).map_err(|_err| {
             debug!("Invalid nonce length");
             JwtError::CryptoError
         })?;
 
-        let tag = Aes256GcmTag::from_exact_iter(jwec.authentication_tag.iter().copied())
-            .ok_or_else(|| {
+        let tag = Aes256GcmTag::try_from_iter(jwec.authentication_tag.iter().copied()).map_err(
+            |_err| {
                 debug!("Invalid tag length");
                 JwtError::CryptoError
-            })?;
+            },
+        )?;
 
         let associated_data = jwec.hdr_b64.as_bytes();
 
         let mut encryption_data = jwec.ciphertext.clone();
 
         cipher
-            .decrypt_in_place_detached(
+            .decrypt_inout_detached(
                 &nonce,
                 associated_data,
-                encryption_data.as_mut_slice(),
+                encryption_data.as_mut_slice().into(),
                 &tag,
             )
             .map_err(|err| {

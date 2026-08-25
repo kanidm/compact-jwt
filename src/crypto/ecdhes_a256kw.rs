@@ -6,10 +6,10 @@ use crate::JwtError;
 use crypto_glue::{
     aes256::Aes256Key,
     ecdh_p256::{
-        self, EcdhP256EphemeralSecret, EcdhP256FieldBytes, EcdhP256Hkdf,
-        EcdhP256PublicEncodedPoint, EcdhP256PublicKey,
+        self, EcdhP256EphemeralSecret, EcdhP256FieldBytes, EcdhP256Hkdf, EcdhP256PublicKey,
+        EcdhP256PublicSec1Point,
     },
-    traits::FromEncodedPoint,
+    traits::FromSec1Point,
 };
 
 /// An ephemeral private key that can create enciphered JWE's. This type must only be used *once*.
@@ -24,7 +24,7 @@ impl JweEncipherOuterA256 for JweEcdhEsA256KWEncipher {
 
         let pub_key = self.priv_key.public_key();
 
-        let encoded_point = EcdhP256PublicEncodedPoint::from(pub_key);
+        let encoded_point = EcdhP256PublicSec1Point::from(pub_key);
 
         let public_key_x = encoded_point
             .x()
@@ -132,9 +132,9 @@ impl JweEcdhEsA256KWDecipher {
                 field_y.copy_from_slice(y);
 
                 let encoded_point =
-                    EcdhP256PublicEncodedPoint::from_affine_coordinates(&field_x, &field_y, false);
+                    EcdhP256PublicSec1Point::from_affine_coordinates(&field_x, &field_y, false);
 
-                EcdhP256PublicKey::from_encoded_point(&encoded_point)
+                EcdhP256PublicKey::from_sec1_point(&encoded_point)
                     .into_option()
                     .ok_or_else(|| {
                         debug!("invalid encoded point");
