@@ -19,8 +19,8 @@ default = []
 all-features = true
 
 [patch.crates-io]
-kanidm-hsm-crypto = { path = "../hsm-crypto" }
-crypto-glue = { path = "../crypto-glue" }
+# kanidm-hsm-crypto = { path = "../hsm-crypto" }
+# crypto-glue = { path = "../crypto-glue" }
 
 [dependencies]
 base64 = "^0.22.1"
