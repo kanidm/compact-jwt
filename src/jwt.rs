@@ -5,6 +5,7 @@ use crate::compact::{JwaAlg, Jwk, JwsCompact, JwsCompactVerifyData};
 use crate::error::JwtError;
 use crate::jws::{Jws, JwsCompactSign2Data, JwsSigned};
 use crate::traits::{JwsSignable, JwsVerifiable};
+use crate::vec_empty;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -35,8 +36,8 @@ where
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sub: Option<String>,
     /// client_id of the oauth2 rp
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub aud: Option<String>,
+    #[serde(skip_serializing_if = "vec_empty", default)]
+    pub aud: Vec<String>,
     /// Expiry in utc epoch seconds
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exp: Option<i64>,
@@ -67,7 +68,7 @@ where
         Jwt {
             iss: None,
             sub: None,
-            aud: None,
+            aud: Vec::default(),
             exp: None,
             nbf: None,
             iat: None,
