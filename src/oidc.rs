@@ -117,7 +117,7 @@ pub struct OidcClaims {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phone_number_verified: Option<bool>,
 
-    /// End-User's preferred postal address. The value of the address member is a JSON [RFC8259] structure containing some or all of the members defined in [Section 5.1.1](https://openid.net/specs/openid-connect-core-1_0.html#AddressClaim).
+    /// End-User's preferred postal address. The value of the address member is a JSON structure containing some or all of the members defined in [Section 5.1.1](https://openid.net/specs/openid-connect-core-1_0.html#AddressClaim).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub address: Option<OidcAddress>,
 
