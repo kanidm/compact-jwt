@@ -155,10 +155,6 @@ pub struct ProtectedHeader {
     #[cfg(feature = "msextensions")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub r#use: Option<String>,
-
-    /// OAuth2 Extension - the client_id that issued this JWS
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_id: Option<String>,
 }
 
 /// A Compact JWS that is able to be verified or stringified for transmission
