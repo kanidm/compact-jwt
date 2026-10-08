@@ -28,7 +28,7 @@ impl JweBuilder {
         })
     }
 
-    /// Set the content type of this JWE
+    /// Set the type of this JWE
     pub fn set_typ(mut self, typ: Option<&str>) -> Self {
         self.header.typ = typ.map(|s| s.to_string());
         self
