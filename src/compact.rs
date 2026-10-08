@@ -98,6 +98,9 @@ pub enum JwaAlg {
     ES256,
     /// RSASSA-PKCS1-v1_5 with SHA-256
     RS256,
+    /// RSA-OAEP with Sha1
+    #[serde(rename = "RSA-OAEP")]
+    RSA_OAEP,
     /// HMAC SHA256
     #[default]
     HS256,
