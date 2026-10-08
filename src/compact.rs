@@ -98,6 +98,9 @@ pub enum JwaAlg {
     ES256,
     /// RSASSA-PKCS1-v1_5 with SHA-256
     RS256,
+    /// RSA-OAEP with Sha1
+    #[serde(rename = "RSA-OAEP")]
+    RSA_OAEP,
     /// HMAC SHA256
     #[default]
     HS256,
@@ -631,5 +634,48 @@ impl fmt::Display for JweCompact {
             "{}.{}.{}.{}.{}",
             self.hdr_b64, content_enc_key_b64, iv_b64, cipher_b64, aad_b64
         )
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::JwkKeySet;
+
+    #[test]
+    fn test_parse_default_keycloak_keyset() {
+        // Keyset taken from local keycloak:26.7 instance.
+        let raw_keyset = r#"{
+    "keys": [
+    {
+        "kid": "IDEbmq1HZnQktPXeMFqTYbzTWue8oylRUEhwv4DVQpE",
+        "kty": "RSA",
+        "alg": "RS256",
+        "use": "sig",
+        "x5c": [
+        "MIIClTCCAX0CBgGhC1JeczANBgkqhkiG9w0BAQsFADAOMQwwCgYDVQQDDANvb28wHhcNMjYxMDA1MDkwNjQ5WhcNMzYxMDA1MDkwODI5WjAOMQwwCgYDVQQDDANvb28wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCb7N7eHfKozp2q8DLyS05uPi5Q9yLUbWxnIJwnDvoTLAiYqOJeqsmI995plnany2vUoSOx3ACRnKj9mAp+Qifoi8f0oSW1Pl9CDxvdQDR8ZHKkmHAhF3r2v6erzH0qEOgv/yQFS42T6StZV7xtsFeyw5hvucXfGH8/b6LmDxpD3ak/npkNQ4zDCc+eX6UZj6OlyyrGeJZYfJe8smfVGB1l0ELGK9WGnE32OED+8CfqsEgvoy4HiPEU6983Bay45m0yWnDihV7zBrNL7tQEGxY4I0ZqFKAzuwlu/4NntPX42zjX7axmMW4IhIcNY7y/KTMBJrIUfxIJFWD9gmBaQxwXAgMBAAEwDQYJKoZIhvcNAQELBQADggEBAI8VRSE1mliJB4cVOVKNY2w8ownej2cXWfz68JmklTi7yiMkIChEcjDMwI7UtmkSqhi4RFCwTOmmNJhP8eZk+R1z6Edk+Pxzhmv5LAbU0c0Y3bPT7KV7gxlpzV6LB+rUkmy5goA4QB5OYSq7vP442HW+wo/5KhYmCq3/bgsE1MDwF3wMNJQHyyt9KE0S51gbBtKaHMjnMq+/21jy+whTbYyO39IZT4nGoKkhgnpciVYAPRVWiYuRPgrTZQNrM+U9Yf164mtktKJRFfeTPRXPNslYQhxYsR+I2ggLetOfsQXf94jWIUOPF6kqY1cUcYCOQoh2HxO203kdQEJPwHPvA8k="
+        ],
+        "x5t": "cRl3BN1QFJqRN6A4MvOkYnJS5Gk",
+        "x5t#S256": "sPPDbz0ebvlOm_8Wrobev-rZuOwAfpakON4eGTuLQ6g",
+        "n": "m-ze3h3yqM6dqvAy8ktObj4uUPci1G1sZyCcJw76EywImKjiXqrJiPfeaZZ2p8tr1KEjsdwAkZyo_ZgKfkIn6IvH9KEltT5fQg8b3UA0fGRypJhwIRd69r-nq8x9KhDoL_8kBUuNk-krWVe8bbBXssOYb7nF3xh_P2-i5g8aQ92pP56ZDUOMwwnPnl-lGY-jpcsqxniWWHyXvLJn1RgdZdBCxivVhpxN9jhA_vAn6rBIL6MuB4jxFOvfNwWsuOZtMlpw4oVe8wazS-7UBBsWOCNGahSgM7sJbv-DZ7T1-Ns41-2sZjFuCISHDWO8vykzASayFH8SCRVg_YJgWkMcFw",
+        "e": "AQAB"
+    },
+    {
+        "kid": "wXTkmiS3hgeZRASbhhze_RZoEoAi6mrxiFuR9IOonQk",
+        "kty": "RSA",
+        "alg": "RSA-OAEP",
+        "use": "enc",
+        "x5c": [
+        "MIIClTCCAX0CBgGhC1JeyjANBgkqhkiG9w0BAQsFADAOMQwwCgYDVQQDDANvb28wHhcNMjYxMDA1MDkwNjUwWhcNMzYxMDA1MDkwODMwWjAOMQwwCgYDVQQDDANvb28wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCtAaJ2DI1421i76agGB70eHAziWrWp39Isr0lbizsqzCcli9us1nBYcXbzcbnUbLHcp3NjJbbNz+D8qmh9nVoUbDJRnspTxojGljCPg+lJS7MefY5vU2KGWZNcUfnk5f7VFf7ghC3xAPY0qAlFmwTTXtw2JK3kHl7/4d6djcVt6+xCDSmjyJQBnWgrZX5pIkFGxLy7a1dBai9Cq/DpJVJO3mQBpGS+eAN9ctWAZMr2ze1IKCTP13C58aUpaDiyAQztWXINk11zirIhe7DXdRqAGGhts2um9QTfNWoSCTCJKfBIR1DF4gqjvXLXrP3e+Uxv46+QOMR1l+VHUM+URBubAgMBAAEwDQYJKoZIhvcNAQELBQADggEBAEp6cJiXKmaKcD83Y988/S3R5CSG1WkatMIwWkNpuFbGmuqG6IK+hBeYq0uV2MZhpdG7yei2Lfn9BJQcFlU5TEUGTUBf4EtvLEKOdaFXGmnHbdNGuodBIGCBDnCWzGxvqcABa4U0iU8UHIlQBbzSiKA29r81S8ecPR+Yc7+spzg0lXmxZLWYNyj/9m02PC5aI0r7WV1ZifOHFT3iQFdrhj/osNXdJoE5r4BLVAyuJ9Ws0tMgfCyuarigcMxko8OS9gftumEUDPb5w20ukFlsVAcMKk7B/QTZkyN+s/FK9+A422RLLjjR5tEFIUk18swBxFxJSWdsdXMTXF86A6eHyTE="
+        ],
+        "x5t": "ohFRY9F1EaI2LDgO9mo2fS3dEBU",
+        "x5t#S256": "D_lIHppuzTwx1li5vHa2b450ztAnGfy9fgUczn6-GYo",
+        "n": "rQGidgyNeNtYu-moBge9HhwM4lq1qd_SLK9JW4s7KswnJYvbrNZwWHF283G51Gyx3KdzYyW2zc_g_KpofZ1aFGwyUZ7KU8aIxpYwj4PpSUuzHn2Ob1NihlmTXFH55OX-1RX-4IQt8QD2NKgJRZsE017cNiSt5B5e_-HenY3FbevsQg0po8iUAZ1oK2V-aSJBRsS8u2tXQWovQqvw6SVSTt5kAaRkvngDfXLVgGTK9s3tSCgkz9dwufGlKWg4sgEM7VlyDZNdc4qyIXuw13UagBhobbNrpvUE3zVqEgkwiSnwSEdQxeIKo71y16z93vlMb-OvkDjEdZflR1DPlEQbmw",
+        "e": "AQAB"
+    }
+    ]
+}"#;
+
+        let _ = serde_json::from_str::<JwkKeySet>(raw_keyset)
+            .expect("Compatibility with keycloak algs");
     }
 }
